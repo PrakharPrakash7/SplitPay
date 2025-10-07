@@ -17,6 +17,7 @@ function App() {
 
        <Route
   path="/buyer-dashboard"
+  element={
     <ProtectedRoute allowedRole="buyer">
       <BuyerDashboard />
     </ProtectedRoute>
