@@ -3,16 +3,20 @@ import mongoose from "mongoose";
 import cors from "cors";
 import dotenv from "dotenv";
 
-//import authRoutes from "./routes/auth.js"; // we will create next
-
+import authRoutes from "./routes/auth.js"; // we will create next
+import buyerRoutes from "./routes/buyer.js";
 dotenv.config();
 const app = express();
 
 app.use(cors());
 app.use(express.json());
 
+
+app.use("/api/buyer", buyerRoutes);
+
+
 // Routes
-// app.use("/api/auth", authRoutes);
+ app.use("/api/auth", authRoutes);
 
 app.get("/", (req, res) => res.send("SplitPay Backend Running ✅"));
 
