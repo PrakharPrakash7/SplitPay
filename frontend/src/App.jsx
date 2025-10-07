@@ -6,15 +6,32 @@ import BuyerLogin from "./pages/BuyerLogin";
 import BuyerDashboard from "./pages/BuyerDashboard";
 import CardholderLogin from "./pages/CardholderLogin";
 import CardholderDashboard from "./pages/CardholderDashboard";
-
+import ProtectedRoute from "./components/ProtectedRoute";
 function App() {
   return (
     <Router>
       <Routes>
         <Route path="/" element={<BuyerLogin />} />
-        <Route path="/buyer-dashboard" element={<BuyerDashboard />} />
+       
         <Route path="/cardholder" element={<CardholderLogin />} />
-        <Route path="/cardholder-dashboard" element={<CardholderDashboard />} />
+
+       <Route
+  path="/buyer-dashboard"
+    <ProtectedRoute allowedRole="buyer">
+      <BuyerDashboard />
+    </ProtectedRoute>
+  }
+/>
+
+<Route
+  path="/cardholder-dashboard"
+  element={
+    <ProtectedRoute allowedRole="cardholder">
+      <CardholderDashboard />
+    </ProtectedRoute>
+  }
+/>
+       
       </Routes>
       {/* Toast notifications mounted here */}
       <ToastContainer position="top-center" autoClose={3000} />

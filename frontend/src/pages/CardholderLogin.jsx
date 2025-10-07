@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { toast, ToastContainer } from "react-toastify";
 import 'react-toastify/dist/ReactToastify.css';
-
+import { useNavigate } from "react-router-dom";
 const CardholderLogin = () => {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const navigate = useNavigate();
 
   const handleSignup = async () => {
     try {
@@ -18,6 +19,7 @@ const CardholderLogin = () => {
       if(res.ok){
         toast.success(`Cardholder signed up: ${data.user.name}`);
         localStorage.setItem("token", data.token);
+        localStorage.setItem("role", "cardholder");
       } else {
         toast.error(data.message);
       }
@@ -37,6 +39,9 @@ const CardholderLogin = () => {
       if(res.ok){
         toast.success(`Cardholder logged in: ${data.user.name}`);
         localStorage.setItem("token", data.token);
+        localStorage.setItem("role", "cardholder");
+        navigate("/cardholder-dashboard");
+        
       } else {
         toast.error(data.message);
       }
