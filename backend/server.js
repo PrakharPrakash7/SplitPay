@@ -5,6 +5,7 @@ import dotenv from "dotenv";
 
 import authRoutes from "./routes/auth.js"; // we will create next
 import buyerRoutes from "./routes/buyer.js";
+import dealRoutes from "./routes/deal.js";
 dotenv.config();
 const app = express();
 
@@ -13,7 +14,7 @@ app.use(express.json());
 
 
 app.use("/api/buyer", buyerRoutes);
-
+app.use("/api/deals", dealRoutes);
 
 // Routes
  app.use("/api/auth", authRoutes);
