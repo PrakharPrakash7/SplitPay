@@ -3,7 +3,7 @@ import User from "../models/User.js";
 import { queueScrapeRequest } from "../utils/scrapeQueue.js";
 import admin from "../utils/firebaseAdmin.js"; // we'll make this file next
 import redisClient from "../utils/redisClient.js";
-import { sendDealNotificationEmail } from "../utils/emailService.js"; 
+
 export const createDeal = async (req, res) => {
   try {
     const buyerId = req.user.id; // coming from JWT or Firebase auth middleware
@@ -31,7 +31,7 @@ export const createDeal = async (req, res) => {
       finalPrice * (1 - (discountPct || 10) / 100)
     );
 
-    const expiresAt = new Date(Date.now() + 1 * 60 * 1000); // 1 min expiry for testing
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes expiry
 
     const deal = await Deal.create({
       buyerId,
@@ -49,7 +49,7 @@ export const createDeal = async (req, res) => {
     // at the top
 
 // after deal is created
-    await redisClient.setEx(`deal_expiry_${deal._id}`, 900, "expire"); // 60 seconds
+    await redisClient.setEx(`deal_expiry_${deal._id}`, 300, "expire"); // 300 seconds = 5 minutes
 
 
     console.log("Deal created successfully:", deal._id);
@@ -89,10 +89,12 @@ export const createDeal = async (req, res) => {
         const message = {
           notification: {
             title: "New Deal Request 💸",
-            body: `${product.title} — ₹${finalPrice}${offerText}`,
+            body: `${product.title.substring(0, 50)} — ₹${finalPrice}${offerText}`,
           },
           data: { 
             dealId: deal._id.toString(),
+            action: 'new_deal',
+            price: finalPrice.toString(),
             bankOffers: JSON.stringify(product.bankOffers || [])
           },
         };
@@ -107,9 +109,6 @@ export const createDeal = async (req, res) => {
         console.warn("⚠ FCM notification failed:", fcmError.message);
       }
     }
-
-    // Send Email notifications
-    await sendDealNotificationEmail(cardholders, deal);
 
     return res.status(201).json({ deal });
   } catch (err) {
@@ -144,14 +143,24 @@ export const acceptDeal = async (req, res) => {
 
     //(Optional) notify buyer via FCM
     const buyer = await User.findById(deal.buyerId);
-    if (buyer.fcmToken) {
-      await admin.messaging().send({
-        token: buyer.fcmToken,
-        notification: {
-          title: "Your Deal Was Accepted 🎉",
-          body: "A cardholder agreed to complete your order!",
-        },
-      });
+    if (buyer && buyer.fcmToken) {
+      try {
+        await admin.messaging().send({
+          token: buyer.fcmToken,
+          notification: {
+            title: "Your Deal Was Accepted 🎉",
+            body: `A cardholder agreed to buy ${deal.product.title.substring(0, 40)}...`,
+          },
+          data: {
+            dealId: deal._id.toString(),
+            action: 'deal_accepted',
+            status: 'matched'
+          }
+        });
+        console.log(`✓ Buyer notified of deal acceptance`);
+      } catch (fcmError) {
+        console.warn("⚠ Failed to notify buyer:", fcmError.message);
+      }
     }
 
     res.status(200).json({ message: "Deal accepted successfully", deal });

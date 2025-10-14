@@ -116,14 +116,20 @@ export async function fetchProduct(url) {
     let image = $('meta[property="og:image"]').attr('content');
     
     if (!image && isAmazon) {
-      image = $('#landingImage').attr('src') 
+      image = $('#landingImage').attr('data-old-hires')
+        || $('#landingImage').attr('src') 
         || $('#imgBlkFront').attr('src')
-        || $('.a-dynamic-image').first().attr('src');
+        || $('.a-dynamic-image').first().attr('data-old-hires')
+        || $('.a-dynamic-image').first().attr('src')
+        || $('img[data-a-image-name="landingImage"]').attr('src');
     } else if (!image && isFlipkart) {
-      image = $('._53J4C-._3kHy7B img').attr('src');
+      image = $('._53J4C-._3kHy7B img').attr('src')
+        || $('._396cs4._2amPTt img').attr('src');
     }
     
     image = image || fallback.image;
+    
+    console.log(`Extracted image: ${image ? 'Found' : 'Using fallback'}`);
     
     // Extract price - Try platform-specific selectors first
     let price = null;
@@ -146,7 +152,15 @@ export async function fetchProduct(url) {
           const num = priceText.replace(/[^\d.]/g, '');
           if (num) {
             price = parseFloat(num.replace(/,/g, ''));
-            if (price > 0) break;
+            if (price > 0) {
+              // Fix: Sometimes Amazon shows price twice (e.g., "24999.24999")
+              const priceStr = price.toString();
+              if (priceStr.includes('.') && priceStr.split('.')[1].length > 2) {
+                // Likely duplicate, take first part
+                price = Math.floor(price);
+              }
+              break;
+            }
           }
         }
       }
@@ -186,34 +200,68 @@ export async function fetchProduct(url) {
     
     if (isAmazon) {
       // Amazon bank offers - look in promotions section
-      $('#promoPriceBlockMessage_feature_div, #applicablePromotionList, .a-section.a-spacing-none').each((i, elem) => {
+      $('#promoPriceBlockMessage_feature_div, #applicablePromotionList, .a-section.a-spacing-none, #vipBadge_feature_div, .a-box-inner').each((i, elem) => {
         const offerText = $(elem).text().trim();
         
         // Check if it's a bank offer with credit card
-        if (offerText.match(/bank|credit card|card offer|instant discount/i)) {
+        if (offerText.match(/bank|credit card|card offer|instant discount|cashback/i)) {
           let bankName = null;
           
           for (const bank of banks) {
             if (offerText.match(new RegExp(bank, 'i'))) {
               bankName = bank.toUpperCase();
+              if (bankName === 'CITI') bankName = 'CITIBANK';
+              if (bankName === 'AMEX') bankName = 'AMERICAN EXPRESS';
               break;
             }
           }
           
           // Extract discount amount or percentage
-          const discountMatch = offerText.match(/₹\s?([\d,]+)|(\d+)%\s*off|(\d+)%\s*instant/i);
-          const discount = discountMatch ? (discountMatch[1] || discountMatch[2] || discountMatch[3]) : null;
+          const discountMatch = offerText.match(/₹\s?([\d,]+)|(\d+)%\s*off|(\d+)%\s*instant|(\d+)%\s*cashback/i);
+          const discount = discountMatch ? (discountMatch[1] || discountMatch[2] || discountMatch[3] || discountMatch[4]) : null;
           
-          // Only add if it mentions credit card
-          if (bankName && offerText.match(/credit card|card/i)) {
-            // Avoid duplicates
-            if (!bankOffers.find(o => o.bank === bankName)) {
+          // Only add if it mentions credit card or card
+          if (bankName && offerText.match(/credit card|card|instant|cashback/i)) {
+            // Avoid duplicates - check if similar offer already exists
+            const isDuplicate = bankOffers.find(o => 
+              o.bank === bankName && 
+              (o.discount === discount || Math.abs(o.description.length - offerText.length) < 20)
+            );
+            
+            if (!isDuplicate) {
               bankOffers.push({
                 bank: bankName,
                 description: offerText.substring(0, 200),
                 discount: discount,
                 cardType: 'credit'
               });
+            }
+          }
+        }
+      });
+      
+      // Also check for offers in special divs
+      $('.vip-badge-line1, .vip-badge-line2, .deal-badge-text').each((i, elem) => {
+        const offerText = $(elem).text().trim();
+        if (offerText.length > 10) {
+          for (const bank of banks) {
+            if (offerText.match(new RegExp(bank, 'i'))) {
+              let bankName = bank.toUpperCase();
+              if (bankName === 'CITI') bankName = 'CITIBANK';
+              if (bankName === 'AMEX') bankName = 'AMERICAN EXPRESS';
+              
+              const discountMatch = offerText.match(/₹\s?([\d,]+)|(\d+)%/i);
+              const discount = discountMatch ? (discountMatch[1] || discountMatch[2]) : null;
+              
+              if (!bankOffers.find(o => o.bank === bankName)) {
+                bankOffers.push({
+                  bank: bankName,
+                  description: offerText.substring(0, 200),
+                  discount: discount,
+                  cardType: 'credit'
+                });
+              }
+              break;
             }
           }
         }
@@ -251,14 +299,37 @@ export async function fetchProduct(url) {
       });
     }
     
-    console.log(`Found ${bankOffers.length} bank credit card offers`);
+    console.log(`Found ${bankOffers.length} bank credit card offers (before deduplication)`);
+    
+    // Deduplicate offers - keep only the best offer per bank
+    const uniqueOffers = [];
+    const bankMap = new Map();
+    
+    for (const offer of bankOffers) {
+      const existing = bankMap.get(offer.bank);
+      if (!existing) {
+        bankMap.set(offer.bank, offer);
+      } else {
+        // Keep the offer with higher discount
+        const existingDiscount = parseFloat((existing.discount || '0').toString().replace(/,/g, ''));
+        const currentDiscount = parseFloat((offer.discount || '0').toString().replace(/,/g, ''));
+        
+        if (currentDiscount > existingDiscount) {
+          bankMap.set(offer.bank, offer);
+        }
+      }
+    }
+    
+    bankMap.forEach(offer => uniqueOffers.push(offer));
+    
+    console.log(`Deduplicated to ${uniqueOffers.length} unique bank offers`);
     
     const product = { 
       title, 
       image, 
       price: price || fallback.price, 
       url,
-      bankOffers: bankOffers.length > 0 ? bankOffers : []
+      bankOffers: uniqueOffers.length > 0 ? uniqueOffers : []
     };
     
     // Cache for 1 hour
