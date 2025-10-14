@@ -8,6 +8,7 @@ import buyerRoutes from "./routes/buyer.js";
 import dealRoutes from "./routes/deal.js";
 import { monitorDealExpiry } from "./utils/dealExpiryWatcher.js";
 import userRoutes from "./routes/user.js";
+import monitoringRoutes from "./routes/monitoring.js";
 dotenv.config();
 const app = express();
 
@@ -23,6 +24,7 @@ monitorDealExpiry();
 app.use("/api/buyer", buyerRoutes);
 app.use("/api/deals", dealRoutes);
 app.use("/api/users", userRoutes);
+app.use("/api/monitoring", monitoringRoutes);
 
 app.get("/", (req, res) => res.send("SplitPay Backend Running ✅"));
 

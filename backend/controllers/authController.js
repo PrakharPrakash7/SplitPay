@@ -5,7 +5,7 @@ import jwt from "jsonwebtoken";
 // Cardholder signup
 export const signup = async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    const { name, email, password, creditCards } = req.body;
 
     // Check if user exists
     const existingUser = await User.findOne({ email });
@@ -20,7 +20,8 @@ export const signup = async (req, res) => {
       name,
       email,
       password: hashedPassword,
-      role: "cardholder"
+      role: "cardholder",
+      creditCards: creditCards || [] // Accept credit card info during signup
     });
 
     await user.save();

@@ -28,4 +28,32 @@ router.post("/fcm", verifyToken, async (req, res) => {
   }
 });
 
+/**
+ * Add or update credit card information
+ */
+router.post("/credit-cards", verifyToken, async (req, res) => {
+  try {
+    const { creditCards } = req.body;
+    
+    if (!creditCards || !Array.isArray(creditCards)) {
+      return res.status(400).json({ message: "Invalid credit cards data" });
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      req.user.id,
+      { creditCards },
+      { new: true }
+    ).select("-password");
+
+    console.log(`✓ Credit cards updated for user: ${updatedUser.name}`);
+    res.json({ 
+      message: "Credit cards updated successfully", 
+      creditCards: updatedUser.creditCards 
+    });
+  } catch (err) {
+    console.error("Error updating credit cards:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 export default router;

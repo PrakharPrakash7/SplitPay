@@ -1,6 +1,6 @@
 import Deal from "../models/Deal.js";
 import User from "../models/User.js";
-import { fetchProduct } from "../utils/scrapeCache.js";
+import { queueScrapeRequest } from "../utils/scrapeQueue.js";
 import admin from "../utils/firebaseAdmin.js"; // we'll make this file next
 import redisClient from "../utils/redisClient.js";
 import { sendDealNotificationEmail } from "../utils/emailService.js"; 
@@ -18,8 +18,9 @@ export const createDeal = async (req, res) => {
 
     console.log("Fetching product from URL:", productUrlToUse);
 
-    // fetch metadata from product URL (scraping or Redis cache)
-    const product = await fetchProduct(productUrlToUse);
+    // Use queue system to prevent overwhelming servers
+    // This is especially important when 400-500 users are creating deals
+    const product = await queueScrapeRequest(productUrlToUse);
     
     console.log("Product fetched:", product);
 
@@ -53,21 +54,47 @@ export const createDeal = async (req, res) => {
 
     console.log("Deal created successfully:", deal._id);
 
-    // Notify all cardholders with FCM token and email
+    // Notify all cardholders
+    console.log("📢 Notifying all cardholders about the new deal");
+    
     const cardholders = await User.find({
       role: "cardholder",
-    }).select("name email fcmToken");
+    }).select("name email fcmToken creditCards");
+    
+    console.log(`✓ Found ${cardholders.length} cardholders to notify`);
+    
+    // Log bank offers if available
+    if (product.bankOffers && product.bankOffers.length > 0) {
+      const offerBanks = product.bankOffers.map(offer => offer.bank).join(", ");
+      console.log(`🏦 Deal has bank offers for: ${offerBanks}`);
+    }
+
+    if (cardholders.length === 0) {
+      console.log("⚠ No cardholders found in the system");
+      return res.status(201).json({ 
+        deal,
+        message: "Deal created but no cardholders registered yet"
+      });
+    }
 
     // Send FCM notifications (optional - skip if Firebase not configured)
     const tokens = cardholders.map((c) => c.fcmToken).filter(Boolean);
     if (tokens.length) {
       try {
+        // Include bank offer details in notification
+        const offerText = product.bankOffers && product.bankOffers.length > 0
+          ? ` | ${product.bankOffers[0].discount} off`
+          : "";
+        
         const message = {
           notification: {
             title: "New Deal Request 💸",
-            body: `${product.title} — ₹${finalPrice}`,
+            body: `${product.title} — ₹${finalPrice}${offerText}`,
           },
-          data: { dealId: deal._id.toString() },
+          data: { 
+            dealId: deal._id.toString(),
+            bankOffers: JSON.stringify(product.bankOffers || [])
+          },
         };
 
         if (admin.messaging && typeof admin.messaging === 'function') {

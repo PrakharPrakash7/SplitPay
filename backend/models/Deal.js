@@ -6,7 +6,12 @@ const DealSchema = new mongoose.Schema({
     title: String,
     image: String,
     price: Number,
-    url: String
+    url: String,
+    bankOffers: [{
+      bank: String,
+      offer: String,
+      discount: String
+    }]
   },
   discountPct: { type: Number, default: 10 },
   discountedPrice: Number,
