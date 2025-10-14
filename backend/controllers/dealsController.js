@@ -2,7 +2,8 @@ import Deal from "../models/Deal.js";
 import User from "../models/User.js";
 import { fetchProduct } from "../utils/scrapeCache.js";
 import admin from "../utils/firebaseAdmin.js"; // we'll make this file next
-
+import redisClient from "../utils/redisClient.js";
+import { sendDealNotificationEmail } from "../utils/emailService.js"; 
 export const createDeal = async (req, res) => {
   try {
     const buyerId = req.user.id; // coming from JWT or Firebase auth middleware
@@ -29,7 +30,7 @@ export const createDeal = async (req, res) => {
       finalPrice * (1 - (discountPct || 10) / 100)
     );
 
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 min expiry
+    const expiresAt = new Date(Date.now() + 1 * 60 * 1000); // 1 min expiry for testing
 
     const deal = await Deal.create({
       buyerId,
@@ -43,26 +44,45 @@ export const createDeal = async (req, res) => {
       description: description || `Deal for ${product.title}`,
     });
 
+
+    // at the top
+
+// after deal is created
+    await redisClient.setEx(`deal_expiry_${deal._id}`, 900, "expire"); // 60 seconds
+
+
     console.log("Deal created successfully:", deal._id);
 
-    // Notify all cardholders with FCM token
+    // Notify all cardholders with FCM token and email
     const cardholders = await User.find({
       role: "cardholder",
-      fcmToken: { $ne: null },
-    }).select("fcmToken");
+    }).select("name email fcmToken");
 
+    // Send FCM notifications (optional - skip if Firebase not configured)
     const tokens = cardholders.map((c) => c.fcmToken).filter(Boolean);
     if (tokens.length) {
-      const message = {
-        notification: {
-          title: "New Deal Request 💸",
-          body: `${product.title} — ₹${finalPrice}`,
-        },
-        data: { dealId: deal._id.toString() },
-      };
+      try {
+        const message = {
+          notification: {
+            title: "New Deal Request 💸",
+            body: `${product.title} — ₹${finalPrice}`,
+          },
+          data: { dealId: deal._id.toString() },
+        };
 
-      await admin.messaging().sendMulticast({ tokens, ...message });
+        if (admin.messaging && typeof admin.messaging === 'function') {
+          await admin.messaging().sendEachForMulticast({ tokens, ...message });
+          console.log(`✓ FCM notifications sent to ${tokens.length} cardholders`);
+        } else {
+          console.log("⚠ FCM not configured, skipping push notifications");
+        }
+      } catch (fcmError) {
+        console.warn("⚠ FCM notification failed:", fcmError.message);
+      }
     }
+
+    // Send Email notifications
+    await sendDealNotificationEmail(cardholders, deal);
 
     return res.status(201).json({ deal });
   } catch (err) {
@@ -114,3 +134,32 @@ export const acceptDeal = async (req, res) => {
   }
 };
 
+// Get all deals (for monitoring/testing)
+export const getAllDeals = async (req, res) => {
+  try {
+    const deals = await Deal.find()
+      .populate("buyerId", "name email")
+      .populate("cardholderId", "name email")
+      .sort({ createdAt: -1 });
+
+    // Add time remaining for each deal
+    const dealsWithTimeInfo = deals.map(deal => {
+      const now = new Date();
+      const expiresAt = new Date(deal.expiresAt);
+      const timeRemaining = Math.max(0, Math.floor((expiresAt - now) / 1000)); // seconds
+      const isExpired = now > expiresAt;
+
+      return {
+        ...deal.toObject(),
+        timeRemaining: `${Math.floor(timeRemaining / 60)}m ${timeRemaining % 60}s`,
+        isExpired,
+        expiresAtReadable: expiresAt.toLocaleString()
+      };
+    });
+
+    res.json({ deals: dealsWithTimeInfo });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+};

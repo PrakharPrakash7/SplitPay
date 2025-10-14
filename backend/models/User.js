@@ -5,6 +5,8 @@ const userSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true },
   password: { type: String },
   role: { type: String, enum: ["buyer", "cardholder"], required: true },
+  firebaseUid: { type: String },
+  fcmToken: { type: String, default: null },
   createdAt: { type: Date, default: Date.now }
 });
 
