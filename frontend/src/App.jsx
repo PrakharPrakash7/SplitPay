@@ -1,11 +1,12 @@
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
-import { ToastContainer } from "react-toastify";
-import 'react-toastify/dist/ReactToastify.css';
+import { Toaster } from "react-hot-toast";
 
 import BuyerLogin from "./pages/BuyerLogin";
 import BuyerDashboard from "./pages/BuyerDashboard";
+import BuyerProfile from "./pages/BuyerProfile";
 import CardholderLogin from "./pages/CardholderLogin";
 import CardholderDashboard from "./pages/CardholderDashboard";
+import CardholderProfile from "./pages/CardholderProfile";
 import ProtectedRoute from "./components/ProtectedRoute";
 function App() {
   return (
@@ -32,10 +33,28 @@ function App() {
     </ProtectedRoute>
   }
 />
+
+<Route
+  path="/buyer-profile"
+  element={
+    <ProtectedRoute allowedRole="buyer">
+      <BuyerProfile />
+    </ProtectedRoute>
+  }
+/>
+
+<Route
+  path="/cardholder-profile"
+  element={
+    <ProtectedRoute allowedRole="cardholder">
+      <CardholderProfile />
+    </ProtectedRoute>
+  }
+/>
        
       </Routes>
       {/* Toast notifications mounted here */}
-      <ToastContainer position="top-center" autoClose={3000} />
+      <Toaster position="top-center" />
     </Router>
   );
 }

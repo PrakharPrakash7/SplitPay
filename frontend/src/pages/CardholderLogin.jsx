@@ -1,6 +1,5 @@
 import { useState } from "react";
-import { toast, ToastContainer } from "react-toastify";
-import 'react-toastify/dist/ReactToastify.css';
+import toast from "react-hot-toast";
 import { useNavigate } from "react-router-dom";
 const CardholderLogin = () => {
   const [name, setName] = useState("");
@@ -20,6 +19,7 @@ const CardholderLogin = () => {
         toast.success(`Cardholder signed up: ${data.user.name}`);
         localStorage.setItem("token", data.token);
         localStorage.setItem("role", "cardholder");
+        navigate("/cardholder-dashboard");
       } else {
         toast.error(data.message);
       }

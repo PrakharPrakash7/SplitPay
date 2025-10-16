@@ -56,4 +56,48 @@ router.post("/credit-cards", verifyToken, async (req, res) => {
   }
 });
 
+/**
+ * Get user profile
+ */
+router.get("/profile", verifyToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select('-password');
+    
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    
+    console.log(`✓ Profile fetched for user: ${user.name}`);
+    res.json({ user });
+  } catch (error) {
+    console.error('Get profile error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+/**
+ * Update user profile (buyer/cardholder payment details)
+ */
+router.put("/profile", verifyToken, async (req, res) => {
+  try {
+    const { buyerPaymentDetails, cardholderPayoutDetails } = req.body;
+    
+    const updateData = {};
+    if (buyerPaymentDetails) updateData.buyerPaymentDetails = buyerPaymentDetails;
+    if (cardholderPayoutDetails) updateData.cardholderPayoutDetails = cardholderPayoutDetails;
+    
+    const user = await User.findByIdAndUpdate(
+      req.user.id,
+      { $set: updateData },
+      { new: true }
+    ).select('-password');
+    
+    console.log(`✓ Profile updated for user: ${user.name}`);
+    res.json({ user, message: 'Profile updated successfully' });
+  } catch (error) {
+    console.error('Update profile error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 export default router;

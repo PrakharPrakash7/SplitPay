@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { onMessage } from 'firebase/messaging';
 import { messaging } from '../firebase';
-import { toast } from 'react-toastify';
+import toast from 'react-hot-toast';
 
 /**
  * Custom hook to handle FCM foreground messages
@@ -22,17 +22,10 @@ export const useFCMForeground = (onMessageReceived) => {
 
       // Show toast notification
       if (notification) {
-        toast.info(
-          `${notification.title}\n${notification.body}`,
-          {
-            position: 'top-right',
-            autoClose: 5000,
-            hideProgressBar: false,
-            closeOnClick: true,
-            pauseOnHover: true,
-            draggable: true,
-          }
-        );
+        toast(`${notification.title}\n${notification.body}`, {
+          duration: 5000,
+          icon: '📨',
+        });
       }
 
       // Call the callback to refresh data
