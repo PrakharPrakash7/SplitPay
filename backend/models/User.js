@@ -61,8 +61,7 @@ const userSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now }
 });
 
-// Index for faster lookups
-userSchema.index({ email: 1 });
+// Index for faster lookups (email already has unique index from schema)
 userSchema.index({ role: 1 });
 userSchema.index({ firebaseUid: 1 });
 

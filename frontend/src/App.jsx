@@ -7,6 +7,8 @@ import BuyerProfile from "./pages/BuyerProfile";
 import CardholderLogin from "./pages/CardholderLogin";
 import CardholderDashboard from "./pages/CardholderDashboard";
 import CardholderProfile from "./pages/CardholderProfile";
+import AdminLogin from "./pages/AdminLogin";
+import AdminDashboard from "./pages/AdminDashboard";
 import ProtectedRoute from "./components/ProtectedRoute";
 function App() {
   return (
@@ -15,6 +17,8 @@ function App() {
         <Route path="/" element={<BuyerLogin />} />
        
         <Route path="/cardholder" element={<CardholderLogin />} />
+        
+        <Route path="/admin" element={<AdminLogin />} />
 
        <Route
   path="/buyer-dashboard"
@@ -48,6 +52,15 @@ function App() {
   element={
     <ProtectedRoute allowedRole="cardholder">
       <CardholderProfile />
+    </ProtectedRoute>
+  }
+/>
+
+<Route
+  path="/admin-dashboard"
+  element={
+    <ProtectedRoute allowedRole="admin">
+      <AdminDashboard />
     </ProtectedRoute>
   }
 />

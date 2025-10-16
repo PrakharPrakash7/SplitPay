@@ -559,6 +559,133 @@ router.post('/void-payment', verifyToken, async (req, res) => {
 });
 
 /**
+ * TESTING ONLY: Admin endpoint to manually mark order as shipped
+ * POST /api/payment/admin/mark-shipped
+ * This bypasses the automatic shipping detection for testing purposes
+ */
+router.post('/admin/mark-shipped', verifyToken, async (req, res) => {
+  try {
+    const { dealId } = req.body;
+
+    if (!dealId) {
+      return res.status(400).json({ error: 'Deal ID is required' });
+    }
+
+    const deal = await Deal.findById(dealId).populate('buyerId cardholderId');
+
+    if (!deal) {
+      return res.status(404).json({ error: 'Deal not found' });
+    }
+
+    // Check if order has been placed
+    if (deal.status !== 'order_placed') {
+      return res.status(400).json({ 
+        error: `Cannot mark as shipped. Current status: ${deal.status}. Order must be placed first.` 
+      });
+    }
+
+    // Mark as shipped
+    deal.status = 'shipped';
+    deal.shippedAt = new Date();
+    await deal.save();
+
+    console.log(`🚚 [ADMIN TEST] Order marked as shipped for deal ${dealId}`);
+
+    // Notify buyer
+    io.to(`user_${deal.buyerId}`).emit('orderShipped', {
+      dealId,
+      message: 'Order has been shipped!'
+    });
+
+    // Notify cardholder
+    io.to(`user_${deal.cardholderId}`).emit('orderShipped', {
+      dealId,
+      message: 'Order shipped! Payment will be captured soon.'
+    });
+
+    // Send FCM to buyer
+    try {
+      const buyer = await User.findById(deal.buyerId);
+      if (buyer && buyer.fcmToken) {
+        await admin.messaging().send({
+          token: buyer.fcmToken,
+          notification: {
+            title: "🚚 Order Shipped!",
+            body: `Your order has been shipped! Payment will be released to cardholder.`,
+          },
+          data: {
+            dealId: dealId,
+            action: 'order_shipped',
+            status: 'shipped'
+          }
+        });
+      }
+    } catch (fcmError) {
+      console.warn('⚠ FCM notification failed:', fcmError.message);
+    }
+
+    // Automatically capture payment (in production, this would happen after verification delay)
+    // For testing, we do it immediately
+    try {
+      console.log('💰 [ADMIN TEST] Capturing payment immediately for testing...');
+      
+      const productPrice = deal.product.price;
+      const commission = deal.commissionAmount || Math.round(productPrice * 0.05);
+      const totalAmount = productPrice + commission;
+
+      // Capture payment from Razorpay
+      const payment = await capturePayment(deal.razorpayPaymentId, totalAmount);
+
+      // Update deal
+      deal.escrowStatus = 'captured';
+      deal.paymentStatus = 'captured';
+      deal.status = 'payment_captured';
+      await deal.save();
+
+      console.log(`✅ [ADMIN TEST] Payment captured: ₹${totalAmount}`);
+
+      // Notify both parties
+      io.to(`deal_${dealId}`).emit('paymentCaptured', {
+        dealId,
+        amount: totalAmount,
+        message: 'Payment captured! Initiating payout...'
+      });
+
+      // Initiate payout
+      await initiatePayoutTrigger(deal);
+
+      res.status(200).json({
+        success: true,
+        message: '✅ Order marked as shipped and payment captured successfully!',
+        deal: {
+          id: deal._id,
+          status: deal.status,
+          escrowStatus: deal.escrowStatus,
+          shippedAt: deal.shippedAt
+        }
+      });
+
+    } catch (captureError) {
+      console.error('❌ [ADMIN TEST] Payment capture failed:', captureError);
+      res.status(200).json({
+        success: true,
+        message: '✅ Order marked as shipped (payment capture will be retried)',
+        deal: {
+          id: deal._id,
+          status: 'shipped',
+          shippedAt: deal.shippedAt
+        },
+        warning: 'Payment capture failed, will retry later'
+      });
+    }
+
+  } catch (error) {
+    console.error('❌ [ADMIN TEST] Error marking order as shipped:', error);
+    res.status(500).json({ error: 'Failed to mark order as shipped', details: error.message });
+  }
+});
+
+/**
  * Webhook handler for Razorpay events
  * POST /api/payment/webhook
  */

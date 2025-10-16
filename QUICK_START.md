@@ -110,17 +110,27 @@ Add cardholder payout details:
 2. **Submit Order ID**: Enter order ID in form
 3. **Upload Invoice** (optional)
 
-### Step 6: Simulate Shipping
+### Step 6: Mark Order as Shipped (Admin Test Endpoint)
 
-For testing, create a test endpoint to mark as shipped:
+**NEW! Instant Testing - No waiting required!**
 
-```bash
-# Using curl or Postman
-POST http://localhost:5000/api/payment/test/mark-shipped
-Body: { "dealId": "your-deal-id" }
+Get your JWT token from browser console:
+```javascript
+localStorage.getItem('token')
 ```
 
-Or wait for the cron job to detect shipping (runs every 6 hours).
+Then run (Windows PowerShell):
+```powershell
+curl.exe -X POST http://localhost:5000/api/payment/admin/mark-shipped -H "Content-Type: application/json" -H "Authorization: Bearer YOUR_TOKEN" -d "{\"dealId\": \"YOUR_DEAL_ID\"}"
+```
+
+This will:
+- ✅ Mark order as SHIPPED
+- ✅ Capture payment from escrow
+- ✅ Initiate payout to cardholder
+- ✅ Complete the entire flow instantly!
+
+**See ADMIN_SHIPPING_TEST.md for detailed commands!**
 
 ### Step 7: Verify Auto-Disbursement
 

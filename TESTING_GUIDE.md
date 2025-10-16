@@ -202,38 +202,71 @@ VITE v5.x.x  ready in xxx ms
 
 ---
 
-### **3.7: Test Auto-Shipping Detection (Simulated)**
+### **3.7: Test Shipping Detection (ADMIN ENDPOINT FOR TESTING)**
 
-**Option A: Wait for Cron Job** (6 hours in production, can be adjusted for testing)
-- Backend will auto-check tracking URL every 6 hours
-- When shipping detected, auto-captures payment and initiates payout
+**🚀 RECOMMENDED: Use Admin Test Endpoint** (Instant Testing)
 
-**Option B: Manual Test Endpoint** (For Quick Testing)
+This endpoint simulates shipping detection and immediately captures payment + initiates payout.
 
-1. **Find the Deal ID** in browser console or MongoDB
+**Step 1: Get Your JWT Token**
+- Open browser console (F12)
+- Type: `localStorage.getItem('token')`
+- Copy the token (without quotes)
 
-2. **In Terminal 3:**
-   ```bash
-   curl -X POST http://localhost:5000/api/payment/test/mark-shipped \
-   -H "Content-Type: application/json" \
-   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
-   -d '{"dealId": "YOUR_DEAL_ID"}'
-   ```
+**Step 2: Get Deal ID**
+- In browser console, the deal ID is logged when you accept/create a deal
+- OR check the deal card in the dashboard - it shows in the URL or console logs
 
-3. **Expected Result:**
-   - ✅ Backend logs: "🚚 Order shipped"
-   - ✅ After 1 hour (or immediate for testing): "💰 Payment captured"
-   - ✅ After 5 minutes: "💸 Payout initiated"
+**Step 3: Mark Order as Shipped (Windows PowerShell)**
 
-4. **In Both Dashboards:**
-   - **Buyer:** Toast: "🚚 Order has been shipped! Payment will be released soon."
-   - **Cardholder:** Toast: "✅ Payment released from escrow!"
-   - **Cardholder:** Toast: "💸 Your payout has been initiated!"
-   - **Cardholder:** Toast: "🎉 Payment credited to your account!"
+```powershell
+# Replace YOUR_JWT_TOKEN and YOUR_DEAL_ID with actual values
+$headers = @{
+    "Content-Type" = "application/json"
+    "Authorization" = "Bearer YOUR_JWT_TOKEN"
+}
+$body = '{"dealId": "YOUR_DEAL_ID"}'
+Invoke-RestMethod -Uri "http://localhost:5000/api/payment/admin/mark-shipped" -Method POST -Headers $headers -Body $body
+```
 
-5. **Final Status:**
-   - Deal status: "COMPLETED"
-   - Green success banner in both dashboards
+**OR use this simpler command:**
+
+```powershell
+curl.exe -X POST http://localhost:5000/api/payment/admin/mark-shipped -H "Content-Type: application/json" -H "Authorization: Bearer YOUR_JWT_TOKEN" -d "{\"dealId\": \"YOUR_DEAL_ID\"}"
+```
+
+**Step 4: Expected Results (IMMEDIATE)**
+
+**Backend Console:**
+```
+🚚 [ADMIN TEST] Order marked as shipped for deal xxxxx
+💰 [ADMIN TEST] Capturing payment immediately for testing...
+✅ [ADMIN TEST] Payment captured: ₹xxx
+✅ Payout initiated for deal xxxxx: ₹xxx
+```
+
+**In Both Dashboards (Real-time):**
+- **Buyer:** 
+  - ✅ Toast: "🚚 Order has been shipped!"
+  - ✅ Status: "PAYMENT_CAPTURED" or "DISBURSED"
+  
+- **Cardholder:** 
+  - ✅ Toast: "Order shipped! Payment will be captured soon."
+  - ✅ Toast: "✅ Payment captured!"
+  - ✅ Toast: "💸 Your payout has been initiated!"
+  - ✅ Toast: "🎉 Payment credited to your account!"
+
+**Final Status:**
+- Deal status: "DISBURSED" → "COMPLETED"
+- Escrow status: "CAPTURED"
+- Payment released to cardholder
+- Green success banner in both dashboards
+
+---
+
+**⚠️ Alternative (Production Mode - NOT for Testing):**
+
+In production, the automatic cron job runs every 6 hours to check tracking URLs and detect shipping. For testing, use the admin endpoint above instead!
 
 ---
 
