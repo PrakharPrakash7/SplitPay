@@ -3,6 +3,7 @@ import User from "../models/User.js";
 import { queueScrapeRequest } from "../utils/scrapeQueue.js";
 import admin from "../utils/firebaseAdmin.js"; // we'll make this file next
 import redisClient from "../utils/redisClient.js";
+import { io } from "../server.js"; // Import Socket.io instance
 
 export const createDeal = async (req, res) => {
   try {
@@ -110,6 +111,17 @@ export const createDeal = async (req, res) => {
       }
     }
 
+    // Emit Socket.io event to cardholders room
+    io.to('cardholders').emit('newDeal', {
+      deal: {
+        ...deal.toObject(),
+        product: deal.product
+      },
+      message: 'New deal available!'
+    });
+    
+    console.log("✓ Socket.io event emitted to cardholders room");
+
     return res.status(201).json({ deal });
   } catch (err) {
     console.error("Error creating deal:", err);
@@ -139,7 +151,15 @@ export const acceptDeal = async (req, res) => {
     // Mark as matched (cardholder paired with buyer)
     deal.cardholderId = cardholderId;
     deal.status = "matched";
+    deal.acceptedAt = new Date();
+    
+    // Set 15 minute timer for buyer to pay
+    const paymentExpiry = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+    deal.paymentExpiresAt = paymentExpiry;
+    
     await deal.save();
+    
+    console.log(`⏰ Payment timer set: Deal must be paid by ${paymentExpiry.toLocaleTimeString()}`);
 
     //(Optional) notify buyer via FCM
     const buyer = await User.findById(deal.buyerId);
@@ -162,6 +182,18 @@ export const acceptDeal = async (req, res) => {
         console.warn("⚠ Failed to notify buyer:", fcmError.message);
       }
     }
+
+    // Emit Socket.io event to buyer
+    io.to('buyers').emit('dealAcceptedByCardholder', {
+      dealId: deal._id,
+      cardholder: {
+        id: cardholderId,
+        name: req.user.name || 'Cardholder'
+      },
+      message: '🎉 A cardholder accepted your deal!'
+    });
+    
+    console.log(`✓ Socket.io event emitted to buyers room for deal ${deal._id}`);
 
     res.status(200).json({ message: "Deal accepted successfully", deal });
   } catch (err) {

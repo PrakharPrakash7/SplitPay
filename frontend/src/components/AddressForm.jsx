@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import toast from 'react-hot-toast';
 
-const AddressForm = ({ dealId, onSuccess }) => {
+const AddressForm = ({ dealId, onSuccess, onClose }) => {
   const [formData, setFormData] = useState({
     fullName: '',
     phone: '',
@@ -84,9 +84,19 @@ const AddressForm = ({ dealId, onSuccess }) => {
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-lg p-6 max-w-2xl mx-auto my-6">
-      <h3 className="text-2xl font-bold mb-6 text-gray-800">📍 Shipping Address</h3>
-      <form onSubmit={handleSubmit} className="space-y-4">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-lg p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto relative">
+        {/* Close button */}
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 text-gray-500 hover:text-gray-700 text-2xl font-bold"
+          type="button"
+        >
+          ×
+        </button>
+        
+        <h3 className="text-2xl font-bold mb-6 text-gray-800">📍 Shipping Address</h3>
+        <form onSubmit={handleSubmit} className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -219,6 +229,7 @@ const AddressForm = ({ dealId, onSuccess }) => {
           {loading ? 'Sharing...' : '📤 Share Address with Cardholder'}
         </button>
       </form>
+      </div>
     </div>
   );
 };

@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import toast from 'react-hot-toast';
 
-const OrderSubmissionForm = ({ dealId, shippingAddress, productDetails, onSuccess }) => {
+const OrderSubmissionForm = ({ dealId, shippingAddress, product, onClose }) => {
   const [orderId, setOrderId] = useState('');
   const [trackingUrl, setTrackingUrl] = useState('');
+  const [invoiceUrl, setInvoiceUrl] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e) => {
@@ -11,6 +12,16 @@ const OrderSubmissionForm = ({ dealId, shippingAddress, productDetails, onSucces
 
     if (!orderId.trim()) {
       toast.error('Please enter order ID');
+      return;
+    }
+
+    if (!trackingUrl.trim()) {
+      toast.error('Please enter tracking URL');
+      return;
+    }
+
+    if (!invoiceUrl.trim()) {
+      toast.error('Please enter invoice URL');
       return;
     }
 
@@ -26,13 +37,14 @@ const OrderSubmissionForm = ({ dealId, shippingAddress, productDetails, onSucces
         body: JSON.stringify({
           dealId,
           orderId: orderId.trim(),
-          trackingUrl: trackingUrl.trim() || null
+          trackingUrl: trackingUrl.trim(),
+          invoiceUrl: invoiceUrl.trim()
         })
       });
 
       if (res.ok) {
         toast.success('📦 Order submitted! Buyer has been notified.');
-        onSuccess && onSuccess();
+        onClose && onClose();
       } else {
         const error = await res.json();
         toast.error(error.message || 'Failed to submit order');
@@ -46,53 +58,86 @@ const OrderSubmissionForm = ({ dealId, shippingAddress, productDetails, onSucces
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-lg p-6 max-w-2xl mx-auto my-6">
-      <h3 className="text-2xl font-bold mb-4 text-gray-800">📦 Submit Order Details</h3>
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-lg p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto relative">
+        {/* Close button */}
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 text-gray-500 hover:text-gray-700 text-2xl font-bold"
+          type="button"
+        >
+          ×
+        </button>
+        
+        <h3 className="text-2xl font-bold mb-4 text-gray-800">📦 Submit Order Details</h3>
+        
+        {/* Debug info */}
+        {console.log("🔍 OrderSubmissionForm - product:", product, "address:", shippingAddress)}
       
       {/* Show product details */}
-      {productDetails && (
-        <div className="bg-gradient-to-r from-purple-50 to-pink-50 border border-purple-200 rounded-lg p-4 mb-4">
-          <h4 className="font-semibold text-purple-900 mb-3">🛍️ Product to Order:</h4>
+      {product && product.title ? (
+        <div className="bg-gradient-to-r from-purple-50 to-pink-50 border-2 border-purple-300 rounded-lg p-4 mb-4">
+          <h4 className="font-semibold text-purple-900 mb-3 text-lg">🛍️ Product to Order:</h4>
           <div className="flex items-start space-x-4">
-            {productDetails.image && (
+            {product.image && (
               <img 
-                src={productDetails.image} 
-                alt={productDetails.title}
-                className="w-20 h-20 object-cover rounded"
+                src={product.image} 
+                alt={product.title}
+                className="w-24 h-24 object-cover rounded border-2 border-purple-200"
               />
             )}
             <div className="flex-1">
-              <p className="text-sm font-medium text-purple-900">{productDetails.title}</p>
-              <p className="text-sm text-purple-700 mt-1">Price: ₹{productDetails.price}</p>
-              {productDetails.url && (
+              <p className="text-base font-semibold text-purple-900 mb-2">{product.title}</p>
+              <p className="text-base text-purple-700 font-semibold mb-3">Price: ₹{product.price}</p>
+              {product.url && (
                 <a 
-                  href={productDetails.url} 
+                  href={product.url} 
                   target="_blank" 
                   rel="noopener noreferrer"
-                  className="text-xs text-blue-600 hover:underline mt-2 inline-block"
+                  className="inline-block bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded text-sm transition"
                 >
-                  🔗 Open product page →
+                  🔗 Open Product Page to Place Order →
                 </a>
               )}
             </div>
           </div>
         </div>
+      ) : (
+        <div className="bg-yellow-50 border border-yellow-300 rounded-lg p-4 mb-4">
+          <p className="text-sm text-yellow-800">⚠️ Product details not available</p>
+        </div>
       )}
       
       {/* Show shipping address */}
-      {shippingAddress && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-          <h4 className="font-semibold text-blue-900 mb-2">📍 Shipping Address:</h4>
-          <div className="text-sm text-blue-800">
-            <p className="font-medium">{shippingAddress.name || shippingAddress.fullName}</p>
-            <p>{shippingAddress.mobile || shippingAddress.phone}</p>
+      {shippingAddress && shippingAddress.name ? (
+        <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-4 mb-6">
+          <h4 className="font-semibold text-blue-900 mb-2 text-lg">📍 Shipping Address:</h4>
+          <div className="text-sm text-blue-800 space-y-1">
+            <p className="font-semibold text-base">{shippingAddress.name || shippingAddress.fullName}</p>
+            <p className="font-medium">{shippingAddress.mobile || shippingAddress.phone}</p>
             <p>{shippingAddress.addressLine1}</p>
             {shippingAddress.addressLine2 && <p>{shippingAddress.addressLine2}</p>}
             <p>{shippingAddress.city}, {shippingAddress.state} - {shippingAddress.pincode}</p>
             {shippingAddress.landmark && <p>Landmark: {shippingAddress.landmark}</p>}
           </div>
         </div>
+      ) : (
+        <div className="bg-yellow-50 border border-yellow-300 rounded-lg p-4 mb-6">
+          <p className="text-sm text-yellow-800">⚠️ Shipping address not available</p>
+        </div>
       )}
+
+      {/* Instructions */}
+      <div className="bg-gradient-to-r from-green-50 to-teal-50 border-2 border-green-300 rounded-lg p-4 mb-6">
+        <h4 className="font-semibold text-green-900 mb-2 text-lg">📋 Instructions:</h4>
+        <ol className="text-sm text-green-800 space-y-2 ml-4 list-decimal">
+          <li><strong>Click the "Open Product Page" button above</strong> to go to the product</li>
+          <li>Place the order using the <strong>exact shipping address shown above</strong></li>
+          <li>After placing the order, <strong>copy the Order ID, Tracking URL, and Invoice/Order Details URL</strong></li>
+          <li>Come back here and <strong>paste all details below</strong></li>
+          <li>Click "Submit Order Details" to complete the process</li>
+        </ol>
+      </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
@@ -114,23 +159,41 @@ const OrderSubmissionForm = ({ dealId, shippingAddress, productDetails, onSucces
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            Tracking URL (Optional)
+            Tracking URL <span className="text-red-500">*</span>
           </label>
           <input
             type="url"
             value={trackingUrl}
             onChange={(e) => setTrackingUrl(e.target.value)}
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            placeholder="https://www.example.com/track/123456"
+            placeholder="https://www.flipkart.com/track/123456 or https://www.amazon.in/track/123456"
+            required
           />
           <p className="text-xs text-gray-500 mt-1">
-            🔗 Tracking link from Flipkart/Amazon (helps with auto-detection)
+            🔗 Tracking link from order confirmation (Required for shipping detection)
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Invoice/Order Details URL <span className="text-red-500">*</span>
+          </label>
+          <input
+            type="url"
+            value={invoiceUrl}
+            onChange={(e) => setInvoiceUrl(e.target.value)}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            placeholder="https://www.flipkart.com/order/123456 or link to invoice PDF"
+            required
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            📄 Link to view invoice or order details page
           </p>
         </div>
 
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
           <p className="text-sm text-yellow-800">
-            ⚠️ <strong>Important:</strong> Make sure you've placed the order with the exact address shown above before submitting!
+            ⚠️ <strong>Important:</strong> All fields are required! Make sure you've placed the order with the exact address shown above.
           </p>
         </div>
 
@@ -142,6 +205,7 @@ const OrderSubmissionForm = ({ dealId, shippingAddress, productDetails, onSucces
           {loading ? 'Submitting...' : '✅ Submit Order Details'}
         </button>
       </form>
+      </div>
     </div>
   );
 };

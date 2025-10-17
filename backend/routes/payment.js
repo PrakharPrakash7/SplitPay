@@ -32,8 +32,19 @@ router.post('/create-order', verifyToken, async (req, res) => {
       return res.status(404).json({ error: 'Deal not found' });
     }
 
-    if (deal.buyerId.toString() !== buyerId) {
-      return res.status(403).json({ error: 'Unauthorized: Not your deal' });
+    // Convert both IDs to strings for comparison
+    const dealBuyerId = deal.buyerId.toString();
+    const requestBuyerId = buyerId.toString();
+    
+    console.log(`🔍 Checking deal ownership: Deal buyer=${dealBuyerId}, Request buyer=${requestBuyerId}`);
+
+    if (dealBuyerId !== requestBuyerId) {
+      console.error(`❌ Unauthorized: Deal belongs to ${dealBuyerId}, but request from ${requestBuyerId}`);
+      return res.status(403).json({ 
+        error: 'Unauthorized: Not your deal',
+        dealBuyer: dealBuyerId,
+        requestBuyer: requestBuyerId
+      });
     }
 
     if (deal.status !== 'matched') {
@@ -112,7 +123,9 @@ router.post('/verify-payment', verifyToken, async (req, res) => {
       return res.status(404).json({ error: 'Deal not found' });
     }
 
-    if (deal.buyerId.toString() !== buyerId) {
+    // Convert both IDs to strings for comparison
+    if (deal.buyerId.toString() !== buyerId.toString()) {
+      console.error(`❌ Payment verification unauthorized: Deal buyer=${deal.buyerId}, Request buyer=${buyerId}`);
       return res.status(403).json({ error: 'Unauthorized' });
     }
 
@@ -122,9 +135,15 @@ router.post('/verify-payment', verifyToken, async (req, res) => {
     deal.paymentStatus = 'authorized';
     deal.escrowStatus = 'authorized';
     deal.paidAt = new Date();
+    
+    // Set 15 minute timer for buyer to share address
+    const addressExpiry = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+    deal.addressExpiresAt = addressExpiry;
+    
     await deal.save();
-
+    
     console.log(`✅ Payment verified for deal ${dealId}: ${razorpay_payment_id}`);
+    console.log(`⏰ Address timer set: Address must be shared by ${addressExpiry.toLocaleTimeString()}`);
 
     // Notify both buyer and cardholder via Socket.io
     io.to(`deal_${dealId}`).emit('paymentAuthorized', {
@@ -209,14 +228,20 @@ router.post('/share-address', verifyToken, async (req, res) => {
     deal.shippingDetails = shippingDetails;
     deal.status = 'address_shared';
     deal.addressSharedAt = new Date();
+    
+    // Set 15 minute timer for cardholder to submit order
+    const orderExpiry = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+    deal.orderExpiresAt = orderExpiry;
+    
     await deal.save();
 
     console.log(`✅ Address shared for deal ${dealId}`);
+    console.log(`⏰ Order timer set: Order must be submitted by ${orderExpiry.toLocaleTimeString()}`);
 
     // Notify cardholder via Socket.io with address details
     io.to(`user_${deal.cardholderId}`).emit('addressReceived', {
       dealId,
-      shippingDetails,
+      address: shippingDetails, // Frontend expects 'address' not 'shippingDetails'
       product: {
         title: deal.product.title,
         url: deal.product.url,
@@ -225,6 +250,8 @@ router.post('/share-address', verifyToken, async (req, res) => {
       },
       message: 'Buyer shared address! You can now place the order.'
     });
+
+    console.log(`📡 Socket.io event 'addressReceived' emitted to user_${deal.cardholderId}`);
 
     // Send FCM push notification to cardholder - THIS IS THE "NEW ORDER" NOTIFICATION
     try {
@@ -269,7 +296,7 @@ router.post('/share-address', verifyToken, async (req, res) => {
  */
 router.post('/submit-order', verifyToken, async (req, res) => {
   try {
-    const { dealId, orderId, invoiceUrl } = req.body;
+    const { dealId, orderId, trackingUrl, invoiceUrl } = req.body;
     const cardholderId = req.user.id;
 
     const deal = await Deal.findById(dealId);
@@ -278,7 +305,7 @@ router.post('/submit-order', verifyToken, async (req, res) => {
       return res.status(404).json({ error: 'Deal not found' });
     }
 
-    if (deal.cardholderId.toString() !== cardholderId) {
+    if (deal.cardholderId.toString() !== cardholderId.toString()) {
       return res.status(403).json({ error: 'Unauthorized: Not your deal' });
     }
 
@@ -290,22 +317,36 @@ router.post('/submit-order', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'Order ID is required' });
     }
 
+    if (!trackingUrl) {
+      return res.status(400).json({ error: 'Tracking URL is required' });
+    }
+
+    if (!invoiceUrl) {
+      return res.status(400).json({ error: 'Invoice URL is required' });
+    }
+
     // Update deal with order details
     deal.orderIdFromCardholder = orderId;
-    deal.invoiceUrl = invoiceUrl || null;
+    deal.trackingUrl = trackingUrl;
+    deal.invoiceUrl = invoiceUrl;
     deal.status = 'order_placed';
     deal.orderPlacedAt = new Date();
     await deal.save();
 
     console.log(`✅ Order submitted for deal ${dealId}: ${orderId}`);
+    console.log(`📦 Tracking URL: ${trackingUrl}`);
+    console.log(`📄 Invoice URL: ${invoiceUrl}`);
 
     // Notify buyer via Socket.io
-    io.to(`user_${deal.buyerId}`).emit('orderPlaced', {
+    io.to(`user_${deal.buyerId}`).emit('orderSubmitted', {
       dealId,
       orderId,
+      trackingUrl,
       invoiceUrl,
       message: 'Cardholder placed your order! Waiting for shipping.'
     });
+
+    console.log(`📡 Socket.io event 'orderSubmitted' emitted to user_${deal.buyerId}`);
 
     res.status(200).json({
       success: true,
@@ -313,7 +354,9 @@ router.post('/submit-order', verifyToken, async (req, res) => {
       deal: {
         id: deal._id,
         status: deal.status,
-        orderId
+        orderId,
+        trackingUrl,
+        invoiceUrl
       }
     });
   } catch (error) {
@@ -821,4 +864,88 @@ async function handlePayoutProcessed(payout) {
   }
 }
 
+/**
+ * Cancel deal (buyer or cardholder)
+ * POST /api/payment/cancel-deal
+ */
+router.post('/cancel-deal', verifyToken, async (req, res) => {
+  try {
+    const { dealId, reason } = req.body;
+    const userId = req.user.id;
+    const userRole = req.user.role;
+
+    const deal = await Deal.findById(dealId);
+
+    if (!deal) {
+      return res.status(404).json({ error: 'Deal not found' });
+    }
+
+    // Check authorization
+    const isBuyer = deal.buyerId.toString() === userId.toString();
+    const isCardholder = deal.cardholderId && deal.cardholderId.toString() === userId.toString();
+
+    if (!isBuyer && !isCardholder) {
+      return res.status(403).json({ error: 'Unauthorized to cancel this deal' });
+    }
+
+    // Check if deal can be cancelled
+    if (['shipped', 'payment_captured', 'disbursed', 'completed', 'expired', 'refunded'].includes(deal.status)) {
+      return res.status(400).json({ error: 'Deal cannot be cancelled at this stage' });
+    }
+
+    // Handle refund if payment was made
+    if (deal.razorpayPaymentId && deal.escrowStatus === 'authorized') {
+      try {
+        console.log(`💸 Initiating refund for payment ${deal.razorpayPaymentId}`);
+        
+        // In test mode, simulate refund
+        console.log(`🧪 TEST MODE: Simulating refund for ${deal.razorpayPaymentId}`);
+        
+        deal.escrowStatus = 'refunded';
+        deal.paymentStatus = 'refunded';
+        
+      } catch (refundError) {
+        console.error('❌ Refund failed:', refundError);
+        return res.status(500).json({ error: 'Failed to process refund' });
+      }
+    }
+
+    // Update deal status
+    deal.status = 'expired';
+    deal.cancelledBy = isBuyer ? 'buyer' : 'cardholder';
+    deal.cancelledAt = new Date();
+    deal.cancelReason = reason || `Cancelled by ${isBuyer ? 'buyer' : 'cardholder'}`;
+    await deal.save();
+
+    console.log(`❌ Deal ${dealId} cancelled by ${deal.cancelledBy}`);
+
+    // Notify the other party
+    const notifyUserId = isBuyer ? deal.cardholderId : deal.buyerId;
+    const notifyRole = isBuyer ? 'cardholder' : 'buyer';
+    
+    if (notifyUserId) {
+      io.to(`user_${notifyUserId}`).emit('dealCancelled', {
+        dealId,
+        cancelledBy: deal.cancelledBy,
+        reason: deal.cancelReason,
+        message: `Deal cancelled by ${deal.cancelledBy}`
+      });
+    }
+
+    // Broadcast to both rooms
+    io.to('buyers').emit('dealCancelled', { dealId, message: 'Deal cancelled' });
+    io.to('cardholders').emit('dealCancelled', { dealId, message: 'Deal cancelled' });
+
+    res.status(200).json({
+      success: true,
+      message: 'Deal cancelled successfully',
+      refunded: deal.escrowStatus === 'refunded'
+    });
+  } catch (error) {
+    console.error('❌ Error cancelling deal:', error);
+    res.status(500).json({ error: 'Failed to cancel deal', details: error.message });
+  }
+});
+
 export default router;
+

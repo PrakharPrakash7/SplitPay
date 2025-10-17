@@ -84,6 +84,12 @@ const DealSchema = new mongoose.Schema({
   // Timestamps
   receiptUrl: { type: String, default: null },
   expiresAt: Date,
+  paymentExpiresAt: { type: Date, default: null },      // 15 min after deal accepted
+  addressExpiresAt: { type: Date, default: null },      // 15 min after payment
+  orderExpiresAt: { type: Date, default: null },        // 15 min after address shared
+  cancelledBy: { type: String, enum: ["buyer", "cardholder", "system"], default: null },
+  cancelledAt: { type: Date, default: null },
+  cancelReason: { type: String, default: null },
   settled: { type: Boolean, default: false },
   acceptedAt: { type: Date, default: null },
   paidAt: { type: Date, default: null },

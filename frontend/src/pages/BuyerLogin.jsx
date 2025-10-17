@@ -22,8 +22,14 @@ const BuyerLogin = () => {
       body: JSON.stringify({ name, email, firebaseUid: uid }),
     });
     const data = await res.json();
-    localStorage.setItem("token", data.token);
-    localStorage.setItem("role", "buyer");
+    
+    if (data.token && data.user) {
+      localStorage.setItem("token", data.token);
+      localStorage.setItem("role", data.user.role || "buyer"); // Use role from backend
+      console.log("✅ Logged in as:", data.user.role);
+    }
+    
+    return data;
   };
 
   const handleGoogleSignIn = async () => {

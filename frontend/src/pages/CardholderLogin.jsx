@@ -18,7 +18,8 @@ const CardholderLogin = () => {
       if(res.ok){
         toast.success(`Cardholder signed up: ${data.user.name}`);
         localStorage.setItem("token", data.token);
-        localStorage.setItem("role", "cardholder");
+        localStorage.setItem("role", data.user.role || "cardholder"); // Use role from backend
+        console.log("✅ Logged in as:", data.user.role);
         navigate("/cardholder-dashboard");
       } else {
         toast.error(data.message);
@@ -39,7 +40,8 @@ const CardholderLogin = () => {
       if(res.ok){
         toast.success(`Cardholder logged in: ${data.user.name}`);
         localStorage.setItem("token", data.token);
-        localStorage.setItem("role", "cardholder");
+        localStorage.setItem("role", data.user.role || "cardholder"); // Use role from backend
+        console.log("✅ Logged in as:", data.user.role);
         navigate("/cardholder-dashboard");
         
       } else {

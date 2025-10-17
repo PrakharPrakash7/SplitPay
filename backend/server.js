@@ -1,36 +1,104 @@
 import express from "express";
+import { createServer } from "http";
+import { Server } from "socket.io";
 import mongoose from "mongoose";
 import cors from "cors";
 import dotenv from "dotenv";
+import jwt from "jsonwebtoken";
 
-import authRoutes from "./routes/auth.js"; // we will create next
+import authRoutes from "./routes/auth.js";
 import buyerRoutes from "./routes/buyer.js";
 import dealRoutes from "./routes/deal.js";
 import { monitorDealExpiry } from "./utils/dealExpiryWatcher.js";
+import { startExpiryChecker } from "./utils/dealExpiryChecker.js";
 import userRoutes from "./routes/user.js";
 import monitoringRoutes from "./routes/monitoring.js";
+import adminDashboardRoutes from "./routes/adminDashboard.js";
+import paymentRoutes from "./routes/payment.js";
+
 dotenv.config();
+
 const app = express();
+const httpServer = createServer(app);
+
+// Socket.io setup with CORS
+const io = new Server(httpServer, {
+  cors: {
+    origin: "http://localhost:5173",
+    methods: ["GET", "POST"],
+    credentials: true
+  }
+});
+
+// Export io for use in other files
+export { io };
 
 app.use(cors());
 app.use(express.json());
 
 monitorDealExpiry();
 
-
-
 // Routes
- app.use("/api/auth", authRoutes);
+app.use("/api/auth", authRoutes);
 app.use("/api/buyer", buyerRoutes);
 app.use("/api/deals", dealRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/monitoring", monitoringRoutes);
+app.use("/api/admin", adminDashboardRoutes);
+app.use("/api/payment", paymentRoutes);
 
 app.get("/", (req, res) => res.send("SplitPay Backend Running ✅"));
 
+// Socket.io connection handling
+io.on("connection", (socket) => {
+  console.log(`🔌 Client connected: ${socket.id}`);
+
+  // Verify JWT token from socket handshake
+  const token = socket.handshake.auth.token;
+  
+  if (token) {
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      socket.userId = decoded.id;
+      socket.userRole = decoded.role;
+      console.log(`✅ Authenticated: User ${decoded.id} (${decoded.role})`);
+    } catch (error) {
+      console.error("❌ Socket auth error:", error.message);
+    }
+  }
+
+  // Join room based on user role
+  socket.on("joinBuyers", () => {
+    socket.join("buyers");
+    console.log(`👤 ${socket.id} joined buyers room`);
+  });
+
+  socket.on("joinCardholders", () => {
+    socket.join("cardholders");
+    console.log(`💳 ${socket.id} joined cardholders room`);
+  });
+
+  socket.on("joinAdmins", () => {
+    socket.join("admins");
+    console.log(`🔐 ${socket.id} joined admins room`);
+  });
+
+  socket.on("disconnect", () => {
+    console.log(`🔌 Client disconnected: ${socket.id}`);
+  });
+});
+
+// MongoDB connection
 mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log("✅ MongoDB Connected"))
-  .catch(err => console.log(err));
+  .then(() => {
+    console.log("✅ MongoDB Connected");
+    // Start the deal expiry checker after MongoDB connects
+    startExpiryChecker();
+  })
+  .catch(err => console.log("❌ MongoDB Error:", err));
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+httpServer.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`🔌 Socket.io ready on port ${PORT}`);
+});

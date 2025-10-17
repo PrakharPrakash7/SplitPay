@@ -1,14 +1,19 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useFCMForeground } from '../utils/useFCMForeground';
-import { toast, ToastContainer } from 'react-toastify';
-import 'react-toastify/dist/ReactToastify.css';
+import toast from 'react-hot-toast';
+import { useNavigate } from 'react-router-dom';
+import { io } from 'socket.io-client';
+import AddressForm from '../components/AddressForm';
 
 const BuyerDashboard = () => {
+  const navigate = useNavigate();
   const [deals, setDeals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [productUrl, setProductUrl] = useState('');
   const [creating, setCreating] = useState(false);
   const [currentTime, setCurrentTime] = useState(Date.now());
+  const [showAddressForm, setShowAddressForm] = useState(false);
+  const [selectedDeal, setSelectedDeal] = useState(null);
+  const [paymentModal, setPaymentModal] = useState({ show: false, deal: null });
 
   // Update current time every second for live countdown
   useEffect(() => {
@@ -62,16 +67,36 @@ const BuyerDashboard = () => {
     fetchDeals();
   }, [fetchDeals]);
 
-  // Handle FCM foreground messages - auto-refresh when deal is accepted
-  useFCMForeground((data) => {
-    console.log('🔔 Notification received, refreshing deals...');
-    fetchDeals();
-    
-    // Show success toast for deal acceptance
-    if (data?.dealId) {
-      toast.success('A cardholder accepted your deal! 🎉');
+  // Cancel deal function
+  const cancelDeal = async (dealId, reason = 'Cancelled by buyer') => {
+    if (!confirm('Are you sure you want to cancel this deal? This action cannot be undone.')) {
+      return;
     }
-  });
+
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('http://localhost:5000/api/payment/cancel-deal', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ dealId, reason })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        toast.success(data.refunded ? '❌ Deal cancelled and payment refunded' : '❌ Deal cancelled');
+        fetchDeals();
+      } else {
+        const error = await response.json();
+        toast.error(error.error || 'Failed to cancel deal');
+      }
+    } catch (error) {
+      console.error('Error cancelling deal:', error);
+      toast.error('Unable to cancel deal');
+    }
+  };
 
   // Create new deal
   const handleCreateDeal = async (e) => {
@@ -116,23 +141,222 @@ const BuyerDashboard = () => {
 
   const handleLogout = () => {
     localStorage.removeItem("token");
-    window.location.href = "/";
+    localStorage.removeItem("role");
+    navigate("/");
   };
+
+  // Razorpay Payment Function
+  const handlePayment = (dealData) => {
+    const { deal, order } = dealData;
+    
+    const options = {
+      key: order.razorpayKeyId || "rzp_test_RBdZZFe44Lnw5j",
+      amount: order.order.amount, // Amount in paise from backend
+      currency: order.order.currency || "INR",
+      order_id: order.order.id, // Razorpay order ID
+      name: "SplitPay",
+      description: `Payment for ${deal.product?.title || 'Product'}`,
+      handler: async function (response) {
+        console.log("💳 Payment successful:", response);
+        
+        try {
+          const token = localStorage.getItem("token");
+          const verifyResponse = await fetch("http://localhost:5000/api/payment/verify-payment", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_signature: response.razorpay_signature,
+              dealId: deal._id
+            })
+          });
+
+          if (verifyResponse.ok) {
+            toast.success("💰 Payment successful! Funds held in escrow.");
+            setPaymentModal({ show: false, deal: null });
+            
+            // Refresh deals to show updated status
+            await fetchDeals();
+            
+            // Open address form automatically after a short delay
+            setTimeout(() => {
+              console.log("📍 Opening address form for deal:", deal._id);
+              setSelectedDeal(deal);
+              setShowAddressForm(true);
+            }, 1500);
+          } else {
+            const errorData = await verifyResponse.json();
+            console.error("Verification failed:", errorData);
+            toast.error(errorData.error || "Payment verification failed");
+          }
+        } catch (error) {
+          console.error("Payment verification error:", error);
+          toast.error("Something went wrong with payment verification");
+        }
+      },
+      modal: {
+        ondismiss: function() {
+          console.log("Payment cancelled");
+          setPaymentModal({ show: false, deal: null });
+          toast.info("Payment cancelled");
+        }
+      },
+      prefill: {
+        name: "Buyer",
+        email: "buyer@example.com"
+      },
+      theme: {
+        color: "#3399cc"
+      }
+    };
+
+    const rzp = new window.Razorpay(options);
+    rzp.open();
+  };
+
+  // Initiate payment
+  const initiatePayment = async (deal) => {
+    try {
+      const token = localStorage.getItem("token");
+      const response = await fetch("http://localhost:5000/api/payment/create-order", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ dealId: deal._id })
+      });
+
+      if (response.ok) {
+        const orderData = await response.json();
+        console.log("📦 Order created:", orderData);
+        handlePayment({ deal, order: orderData });
+      } else {
+        const errorData = await response.json();
+        toast.error(errorData.error || "Failed to create payment order");
+      }
+    } catch (error) {
+      console.error("Payment initiation error:", error);
+      toast.error("Unable to process payment");
+    }
+  };
+
+  // Socket.io setup
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      navigate("/");
+      return;
+    }
+
+    // Load Razorpay script
+    const script = document.createElement("script");
+    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.async = true;
+    document.body.appendChild(script);
+
+    console.log("🔌 Connecting to Socket.io...");
+    
+    const socket = io("http://localhost:5000", {
+      auth: { token },
+      transports: ["websocket", "polling"]
+    });
+
+    socket.on("connect", () => {
+      console.log("✅ Socket.io connected:", socket.id);
+      socket.emit("joinBuyers");
+    });
+
+    socket.on("connect_error", (error) => {
+      console.error("❌ Socket connection error:", error);
+    });
+
+    // Listen for deal accepted
+    socket.on("dealAcceptedByCardholder", ({ dealId, cardholder, message }) => {
+      console.log("🎉 Deal accepted by cardholder:", dealId);
+      toast.success(message || "🎉 A cardholder accepted your deal!");
+      fetchDeals();
+    });
+
+    // Listen for payment authorized
+    socket.on("paymentAuthorized", ({ dealId, message }) => {
+      console.log("💰 Payment authorized:", dealId);
+      toast.success(message || "💰 Payment authorized successfully!");
+      fetchDeals();
+    });
+
+    // Listen for order submitted by cardholder
+    socket.on("orderSubmitted", ({ dealId, orderId, trackingUrl, invoiceUrl, message }) => {
+      console.log("📦 Order submitted:", dealId, orderId);
+      console.log("🔗 Tracking URL:", trackingUrl);
+      console.log("📄 Invoice URL:", invoiceUrl);
+      toast.success(message || "📦 Cardholder placed the order!");
+      fetchDeals(); // Auto-refresh to show tracking and invoice links
+    });
+
+    // Listen for order shipped
+    socket.on("orderShipped", ({ dealId, message }) => {
+      console.log("🚚 Order shipped:", dealId);
+      toast.success(message || "🚚 Order has been shipped!");
+      fetchDeals();
+    });
+
+    // Listen for payment captured
+    socket.on("paymentCaptured", ({ dealId, message }) => {
+      console.log("✅ Payment captured:", dealId);
+      toast.success(message || "✅ Payment has been processed!");
+      fetchDeals();
+    });
+
+    // Listen for deal expired
+    socket.on("dealExpired", ({ dealId, message }) => {
+      console.log("⏰ Deal expired:", dealId);
+      toast.error(message || "⏰ Deal expired");
+      fetchDeals();
+    });
+
+    // Listen for deal cancelled
+    socket.on("dealCancelled", ({ dealId, cancelledBy, message }) => {
+      console.log("❌ Deal cancelled:", dealId, "by", cancelledBy);
+      toast.info(message || "Deal cancelled");
+      fetchDeals();
+    });
+
+    // Fetch initial deals
+    fetchDeals();
+
+    // Cleanup
+    return () => {
+      console.log("🔌 Disconnecting Socket.io");
+      socket.disconnect();
+      document.body.removeChild(script);
+    };
+  }, [navigate]);
 
   return (
     <div className="min-h-screen bg-gray-100">
-      <ToastContainer />
-      
       {/* Header */}
       <div className="bg-white shadow">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
-          <h1 className="text-3xl font-bold text-gray-900">Buyer Dashboard</h1>
-          <button
-            onClick={handleLogout}
-            className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
-          >
-            Logout
-          </button>
+          <h1 className="text-3xl font-bold text-gray-900">🛒 Buyer Dashboard</h1>
+          <div className="flex gap-4">
+            <button
+              onClick={() => navigate("/buyer-profile")}
+              className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+            >
+              👤 Profile
+            </button>
+            <button
+              onClick={handleLogout}
+              className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
+            >
+              Logout
+            </button>
+          </div>
         </div>
       </div>
 
@@ -220,6 +444,21 @@ const BuyerDashboard = () => {
                             ⏰ Expires in: <span className="font-semibold">{getTimeRemaining(deal.expiresAt)}</span>
                           </p>
                         )}
+                        {deal.status === 'matched' && deal.paymentExpiresAt && (
+                          <p className="text-sm text-orange-600">
+                            ⏰ Pay within: <span className="font-semibold">{getTimeRemaining(deal.paymentExpiresAt)}</span>
+                          </p>
+                        )}
+                        {deal.status === 'payment_authorized' && deal.addressExpiresAt && (
+                          <p className="text-sm text-orange-600">
+                            ⏰ Share address within: <span className="font-semibold">{getTimeRemaining(deal.addressExpiresAt)}</span>
+                          </p>
+                        )}
+                        {deal.status === 'address_shared' && deal.orderExpiresAt && (
+                          <p className="text-sm text-orange-600">
+                            ⏰ Cardholder must submit within: <span className="font-semibold">{getTimeRemaining(deal.orderExpiresAt)}</span>
+                          </p>
+                        )}
                         {deal.product?.bankOffers && deal.product.bankOffers.length > 0 && (
                           <div className="mt-2">
                             <p className="text-sm font-semibold text-blue-600">Bank Offers:</p>
@@ -233,6 +472,151 @@ const BuyerDashboard = () => {
                           </div>
                         )}
                       </div>
+
+                      {/* Action Buttons */}
+                      {deal.status === 'matched' && (
+                        <div className="mt-4 space-y-2">
+                          <button
+                            onClick={() => initiatePayment(deal)}
+                            className="w-full bg-green-600 text-white py-2 px-4 rounded hover:bg-green-700 transition"
+                          >
+                            💳 Pay Now (₹{deal.totalAmount})
+                          </button>
+                          <button
+                            onClick={() => cancelDeal(deal._id, 'Cancelled by buyer before payment')}
+                            className="w-full bg-red-500 text-white py-2 px-4 rounded hover:bg-red-600 transition text-sm"
+                          >
+                            ❌ Cancel Deal
+                          </button>
+                        </div>
+                      )}
+
+                      {deal.status === 'payment_authorized' && (
+                        <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded">
+                          <p className="text-sm text-green-800 text-center">
+                            💰 Payment successful! Share your address.
+                          </p>
+                          <button
+                            onClick={() => {
+                              console.log("🖱️ Share Address button clicked for deal:", deal._id);
+                              console.log("📦 Deal object:", deal);
+                              setSelectedDeal(deal);
+                              setShowAddressForm(true);
+                              console.log("✅ Modal state set to true");
+                            }}
+                            className="w-full mt-2 bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700"
+                          >
+                            📍 Share Address
+                          </button>
+                          <button
+                            onClick={() => cancelDeal(deal._id, 'Cancelled by buyer after payment - refund will be processed')}
+                            className="w-full mt-2 bg-red-500 text-white py-2 px-4 rounded hover:bg-red-600 text-sm"
+                          >
+                            ❌ Cancel Deal (Refund)
+                          </button>
+                        </div>
+                      )}
+
+                      {deal.status === 'address_shared' && (
+                        <div className="mt-4 p-3 bg-purple-50 border border-purple-200 rounded">
+                          <p className="text-sm text-purple-800 text-center">
+                            📍 Address shared! Waiting for cardholder to place order...
+                          </p>
+                          <button
+                            onClick={() => cancelDeal(deal._id, 'Cancelled by buyer after address shared - refund will be processed')}
+                            className="w-full mt-2 bg-red-500 text-white py-2 px-4 rounded hover:bg-red-600 text-sm"
+                          >
+                            ❌ Cancel Deal (Refund)
+                          </button>
+                        </div>
+                      )}
+
+                      {deal.status === 'order_placed' && deal.orderIdFromCardholder && (
+                        <div className="mt-4 p-4 bg-orange-50 border-2 border-orange-300 rounded-lg">
+                          <p className="text-sm text-orange-900 font-semibold mb-2">
+                            📦 Order Details:
+                          </p>
+                          <div className="space-y-2 text-sm">
+                            <p className="text-orange-800">
+                              <span className="font-semibold">Order ID:</span> {deal.orderIdFromCardholder}
+                            </p>
+                            {deal.trackingUrl && (
+                              <p>
+                                <a 
+                                  href={deal.trackingUrl} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  className="text-blue-600 hover:text-blue-800 font-semibold underline"
+                                >
+                                  🔗 Track Your Order →
+                                </a>
+                              </p>
+                            )}
+                            {deal.invoiceUrl && (
+                              <p>
+                                <a 
+                                  href={deal.invoiceUrl} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  className="text-blue-600 hover:text-blue-800 font-semibold underline"
+                                >
+                                  � View Invoice/Order Details →
+                                </a>
+                              </p>
+                            )}
+                          </div>
+                          <p className="text-sm text-orange-600 mt-3 font-medium">
+                            ⏳ Waiting for shipping confirmation...
+                          </p>
+                        </div>
+                      )}
+
+                      {deal.status === 'shipped' && (
+                        <div className="mt-4 p-4 bg-teal-50 border-2 border-teal-300 rounded-lg">
+                          <p className="text-sm text-teal-900 font-semibold mb-2 text-center">
+                            🚚 Order Shipped!
+                          </p>
+                          {(deal.trackingUrl || deal.invoiceUrl) && (
+                            <div className="space-y-2 text-sm mb-3">
+                              {deal.trackingUrl && (
+                                <p className="text-center">
+                                  <a 
+                                    href={deal.trackingUrl} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="text-blue-600 hover:text-blue-800 font-semibold underline"
+                                  >
+                                    � Track Your Shipment →
+                                  </a>
+                                </p>
+                              )}
+                              {deal.invoiceUrl && (
+                                <p className="text-center">
+                                  <a 
+                                    href={deal.invoiceUrl} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="text-blue-600 hover:text-blue-800 font-semibold underline"
+                                  >
+                                    📄 View Invoice →
+                                  </a>
+                                </p>
+                              )}
+                            </div>
+                          )}
+                          <p className="text-sm text-teal-700 text-center">
+                            Payment will be processed soon.
+                          </p>
+                        </div>
+                      )}
+
+                      {(deal.status === 'completed' || deal.status === 'disbursed') && (
+                        <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded text-center">
+                          <p className="text-sm text-green-800 font-semibold">
+                            ✅ Order completed! Enjoy your purchase!
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -241,6 +625,26 @@ const BuyerDashboard = () => {
           )}
         </div>
       </div>
+
+      {/* Address Form Modal */}
+      {console.log("🔍 Modal render check - showAddressForm:", showAddressForm, "selectedDeal:", selectedDeal?._id)}
+      {showAddressForm && selectedDeal && (
+        <AddressForm
+          dealId={selectedDeal._id}
+          onSuccess={() => {
+            console.log("✅ Address shared successfully");
+            setShowAddressForm(false);
+            setSelectedDeal(null);
+            toast.success("📍 Address shared successfully!");
+            fetchDeals();
+          }}
+          onClose={() => {
+            console.log("❌ Address modal closed");
+            setShowAddressForm(false);
+            setSelectedDeal(null);
+          }}
+        />
+      )}
     </div>
   );
 };
