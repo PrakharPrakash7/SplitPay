@@ -3,6 +3,7 @@ import toast from "react-hot-toast";
 import { useNavigate } from "react-router-dom";
 import { io } from "socket.io-client";
 import OrderSubmissionForm from "../components/OrderSubmissionForm";
+import { API_BASE_URL } from "../utils/api";
 
 const CardholderDashboard = () => {
   const [deals, setDeals] = useState([]);
@@ -49,7 +50,7 @@ const CardholderDashboard = () => {
   const fetchDeals = async () => {
     try {
       const token = localStorage.getItem("token");
-      const response = await fetch("http://localhost:5000/api/deals", {
+      const response = await fetch(`${API_BASE_URL}/api/deals`, {
         headers: {
           Authorization: `Bearer ${token}`
         }
@@ -78,7 +79,7 @@ const CardholderDashboard = () => {
     
     try {
       const token = localStorage.getItem("token");
-      const response = await fetch(`http://localhost:5000/api/deals/${dealId}/accept`, {
+      const response = await fetch(`${API_BASE_URL}/api/deals/${dealId}/accept`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`
@@ -111,7 +112,7 @@ const CardholderDashboard = () => {
 
     try {
       const token = localStorage.getItem("token");
-      const response = await fetch('http://localhost:5000/api/payment/cancel-deal', {
+      const response = await fetch(`${API_BASE_URL}/api/payment/cancel-deal`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -149,7 +150,7 @@ const CardholderDashboard = () => {
 
     console.log("🔌 Connecting to Socket.io...");
     
-    const socket = io("http://localhost:5000", {
+    const socket = io(API_BASE_URL, {
       auth: { token },
       transports: ["websocket", "polling"]
     });
@@ -237,6 +238,13 @@ const CardholderDashboard = () => {
       fetchDeals();
     });
 
+    // Listen for deal completed
+    socket.on("dealCompleted", ({ dealId, message }) => {
+      console.log("✅ Deal completed:", dealId);
+      toast.success(message || "✅ Deal completed! Thank you!");
+      fetchDeals();
+    });
+
     // Fetch initial deals
     fetchDeals();
 
@@ -308,9 +316,11 @@ const CardholderDashboard = () => {
                         <p><span className="font-semibold">Discount:</span> {deal.discountPercentage}%</p>
                         <p><span className="font-semibold">Commission:</span> ₹{deal.commissionForCardholder || 0}</p>
                         <p><span className="font-semibold">Buyer:</span> {deal.buyerId?.name || 'Unknown'}</p>
-                        <p className={`font-semibold ${isExpired ? 'text-red-600' : 'text-green-600'}`}>
-                          {isExpired ? '⏰ Expired' : `⏱️ ${timeRemaining} remaining`}
-                        </p>
+                        {deal.status === 'pending' && (
+                          <p className={`font-semibold ${isExpired ? 'text-red-600' : 'text-green-600'}`}>
+                            {isExpired ? '⏰ Expired' : `⏱️ ${timeRemaining} remaining`}
+                          </p>
+                        )}
                         {deal.status === 'matched' && deal.paymentExpiresAt && (
                           <p className="text-sm text-orange-600">
                             ⏰ Buyer must pay within: <span className="font-semibold">{getTimeRemaining(deal.paymentExpiresAt)}</span>
@@ -333,6 +343,9 @@ const CardholderDashboard = () => {
                             deal.status === 'payment_authorized' ? 'bg-green-100 text-green-800' :
                             deal.status === 'address_shared' ? 'bg-purple-100 text-purple-800' :
                             deal.status === 'order_placed' ? 'bg-orange-100 text-orange-800' :
+                            deal.status === 'shipped' ? 'bg-teal-100 text-teal-800' :
+                            deal.status === 'disbursed' ? 'bg-purple-100 text-purple-800' :
+                            deal.status === 'completed' ? 'bg-green-100 text-green-800' :
                             'bg-gray-100 text-gray-800'
                           }`}>
                             {deal.status.replace(/_/g, ' ').toUpperCase()}
@@ -405,6 +418,39 @@ const CardholderDashboard = () => {
                       {deal.status === 'order_placed' && (
                         <div className="mt-4 p-3 bg-orange-50 rounded text-center">
                           <p className="text-sm text-orange-800">📦 Order submitted! Waiting for shipping...</p>
+                        </div>
+                      )}
+
+                      {deal.status === 'shipped' && (
+                        <div className="mt-4 p-4 bg-teal-50 border-2 border-teal-300 rounded-lg text-center">
+                          <p className="text-sm text-teal-900 font-semibold mb-2">
+                            🚚 Order Shipped!
+                          </p>
+                          <p className="text-sm text-teal-700">
+                            Payment will be processed and disbursed soon.
+                          </p>
+                        </div>
+                      )}
+
+                      {deal.status === 'disbursed' && (
+                        <div className="mt-4 p-4 bg-purple-50 border-2 border-purple-300 rounded-lg text-center">
+                          <p className="text-sm text-purple-900 font-semibold mb-2">
+                            💸 Payment Disbursed!
+                          </p>
+                          <p className="text-sm text-purple-700">
+                            Your commission of ₹{deal.commissionForCardholder} has been paid.
+                          </p>
+                        </div>
+                      )}
+
+                      {deal.status === 'completed' && (
+                        <div className="mt-4 p-4 bg-green-50 border-2 border-green-300 rounded-lg text-center">
+                          <p className="text-sm text-green-900 font-semibold mb-2">
+                            ✅ Deal Completed!
+                          </p>
+                          <p className="text-sm text-green-800">
+                            🎉 Thank you! Your commission of ₹{deal.commissionForCardholder} was paid.
+                          </p>
                         </div>
                       )}
                     </div>

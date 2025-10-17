@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import toast from 'react-hot-toast';
+import { API_BASE_URL } from '../utils/api';
 
 const OrderSubmissionForm = ({ dealId, shippingAddress, product, onClose }) => {
   const [orderId, setOrderId] = useState('');
@@ -25,10 +26,16 @@ const OrderSubmissionForm = ({ dealId, shippingAddress, product, onClose }) => {
       return;
     }
 
+    // Validate that invoice URL ends with .pdf
+    if (!invoiceUrl.trim().toLowerCase().endsWith('.pdf') && !invoiceUrl.trim().includes('/invoice') && !invoiceUrl.trim().includes('/order')) {
+      toast.error('Invoice URL should be a PDF file or a valid invoice/order page');
+      return;
+    }
+
     setLoading(true);
     try {
       const token = localStorage.getItem('token');
-      const res = await fetch('http://localhost:5000/api/payment/submit-order', {
+      const res = await fetch(`${API_BASE_URL}/api/payment/submit-order`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

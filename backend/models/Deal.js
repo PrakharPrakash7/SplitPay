@@ -90,6 +90,7 @@ const DealSchema = new mongoose.Schema({
   cancelledBy: { type: String, enum: ["buyer", "cardholder", "system"], default: null },
   cancelledAt: { type: Date, default: null },
   cancelReason: { type: String, default: null },
+  completedAt: { type: Date, default: null },
   settled: { type: Boolean, default: false },
   acceptedAt: { type: Date, default: null },
   paidAt: { type: Date, default: null },

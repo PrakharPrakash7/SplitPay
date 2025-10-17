@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import toast from 'react-hot-toast';
+import { API_BASE_URL } from '../utils/api';
 
 const AddressForm = ({ dealId, onSuccess, onClose }) => {
   const [formData, setFormData] = useState({
@@ -55,7 +56,7 @@ const AddressForm = ({ dealId, onSuccess, onClose }) => {
         landmark: formData.landmark
       };
       
-      const res = await fetch('http://localhost:5000/api/payment/share-address', {
+      const res = await fetch(`${API_BASE_URL}/api/payment/share-address`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

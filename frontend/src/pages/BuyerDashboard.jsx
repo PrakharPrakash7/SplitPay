@@ -3,6 +3,7 @@ import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import AddressForm from '../components/AddressForm';
+import { API_BASE_URL } from '../utils/api';
 
 const BuyerDashboard = () => {
   const navigate = useNavigate();
@@ -44,7 +45,7 @@ const BuyerDashboard = () => {
   const fetchDeals = useCallback(async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch('http://localhost:5000/api/deals', {
+      const response = await fetch(`${API_BASE_URL}/api/deals`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -75,7 +76,7 @@ const BuyerDashboard = () => {
 
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch('http://localhost:5000/api/payment/cancel-deal', {
+      const response = await fetch(`${API_BASE_URL}/api/payment/cancel-deal`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -98,6 +99,35 @@ const BuyerDashboard = () => {
     }
   };
 
+  // Mark order as received
+  const markAsReceived = async (dealId) => {
+    if (!confirm('Have you received your order? This will mark the deal as completed.')) {
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${API_BASE_URL}/api/deals/${dealId}/mark-received`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        }
+      });
+
+      if (response.ok) {
+        toast.success('✅ Order marked as received! Deal completed.');
+        fetchDeals();
+      } else {
+        const error = await response.json();
+        toast.error(error.error || 'Failed to mark as received');
+      }
+    } catch (error) {
+      console.error('Error marking as received:', error);
+      toast.error('Unable to mark as received');
+    }
+  };
+
   // Create new deal
   const handleCreateDeal = async (e) => {
     e.preventDefault();
@@ -111,7 +141,7 @@ const BuyerDashboard = () => {
     
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch('http://localhost:5000/api/deals', {
+      const response = await fetch(`${API_BASE_URL}/api/deals`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -161,7 +191,7 @@ const BuyerDashboard = () => {
         
         try {
           const token = localStorage.getItem("token");
-          const verifyResponse = await fetch("http://localhost:5000/api/payment/verify-payment", {
+          const verifyResponse = await fetch(`${API_BASE_URL}/api/payment/verify-payment`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -222,7 +252,7 @@ const BuyerDashboard = () => {
   const initiatePayment = async (deal) => {
     try {
       const token = localStorage.getItem("token");
-      const response = await fetch("http://localhost:5000/api/payment/create-order", {
+      const response = await fetch(`${API_BASE_URL}/api/payment/create-order`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -261,7 +291,7 @@ const BuyerDashboard = () => {
 
     console.log("🔌 Connecting to Socket.io...");
     
-    const socket = io("http://localhost:5000", {
+    const socket = io(API_BASE_URL, {
       auth: { token },
       transports: ["websocket", "polling"]
     });
@@ -323,6 +353,13 @@ const BuyerDashboard = () => {
     socket.on("dealCancelled", ({ dealId, cancelledBy, message }) => {
       console.log("❌ Deal cancelled:", dealId, "by", cancelledBy);
       toast.info(message || "Deal cancelled");
+      fetchDeals();
+    });
+
+    // Listen for deal completed
+    socket.on("dealCompleted", ({ dealId, message }) => {
+      console.log("✅ Deal completed:", dealId);
+      toast.success(message || "✅ Deal completed!");
       fetchDeals();
     });
 
@@ -434,6 +471,12 @@ const BuyerDashboard = () => {
                             deal.status === 'matched' ? 'text-green-600' :
                             deal.status === 'expired' ? 'text-red-600' :
                             deal.status === 'pending' ? 'text-yellow-600' :
+                            deal.status === 'payment_authorized' ? 'text-green-600' :
+                            deal.status === 'address_shared' ? 'text-purple-600' :
+                            deal.status === 'order_placed' ? 'text-orange-600' :
+                            deal.status === 'shipped' ? 'text-teal-600' :
+                            deal.status === 'disbursed' ? 'text-purple-600' :
+                            deal.status === 'completed' ? 'text-green-600' :
                             'text-gray-600'
                           }`}>
                             {deal.status.toUpperCase()}
@@ -610,10 +653,84 @@ const BuyerDashboard = () => {
                         </div>
                       )}
 
-                      {(deal.status === 'completed' || deal.status === 'disbursed') && (
-                        <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded text-center">
-                          <p className="text-sm text-green-800 font-semibold">
-                            ✅ Order completed! Enjoy your purchase!
+                      {deal.status === 'disbursed' && (
+                        <div className="mt-4 p-4 bg-purple-50 border-2 border-purple-300 rounded-lg">
+                          
+                          {(deal.trackingUrl || deal.invoiceUrl) && (
+                            <div className="space-y-2 text-sm mb-3">
+                              {deal.trackingUrl && (
+                                <p className="text-center">
+                                  <a 
+                                    href={deal.trackingUrl} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="text-blue-600 hover:text-blue-800 font-semibold underline"
+                                  >
+                                    📦 Track Your Shipment →
+                                  </a>
+                                </p>
+                              )}
+                              {deal.invoiceUrl && (
+                                <p className="text-center">
+                                  <a 
+                                    href={deal.invoiceUrl} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="text-blue-600 hover:text-blue-800 font-semibold underline"
+                                  >
+                                    📄 View Invoice →
+                                  </a>
+                                </p>
+                              )}
+                            </div>
+                          )}
+                          <p className="text-sm text-purple-700 text-center mb-3">
+                          Mark as received once you get your order.
+                          </p>
+                          <button
+                            onClick={() => markAsReceived(deal._id)}
+                            className="w-full bg-green-600 text-white py-2 px-4 rounded hover:bg-green-700 transition font-semibold"
+                          >
+                            ✅ Mark as Received
+                          </button>
+                        </div>
+                      )}
+
+                      {deal.status === 'completed' && (
+                        <div className="mt-4 p-4 bg-green-50 border-2 border-green-300 rounded-lg">
+                          <p className="text-sm text-green-900 font-semibold mb-2 text-center">
+                            ✅ Order Completed!
+                          </p>
+                          {(deal.trackingUrl || deal.invoiceUrl) && (
+                            <div className="space-y-2 text-sm mb-3">
+                              {deal.trackingUrl && (
+                                <p className="text-center">
+                                  <a 
+                                    href={deal.trackingUrl} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="text-blue-600 hover:text-blue-800 font-semibold underline"
+                                  >
+                                    📦 View Tracking →
+                                  </a>
+                                </p>
+                              )}
+                              {deal.invoiceUrl && (
+                                <p className="text-center">
+                                  <a 
+                                    href={deal.invoiceUrl} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="text-blue-600 hover:text-blue-800 font-semibold underline"
+                                  >
+                                    📄 View Invoice →
+                                  </a>
+                                </p>
+                              )}
+                            </div>
+                          )}
+                          <p className="text-sm text-green-800 text-center font-medium">
+                            🎉 Thank you for using SplitPay! Enjoy your purchase!
                           </p>
                         </div>
                       )}
