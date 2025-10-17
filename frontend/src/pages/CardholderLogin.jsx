@@ -1,6 +1,8 @@
 import { useState } from "react";
 import toast from "react-hot-toast";
 import { useNavigate } from "react-router-dom";
+import { API_BASE_URL } from "../utils/api";
+
 const CardholderLogin = () => {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -9,7 +11,7 @@ const CardholderLogin = () => {
 
   const handleSignup = async () => {
     try {
-      const res = await fetch("http://localhost:5000/api/auth/signup", {
+      const res = await fetch(`${API_BASE_URL}/api/auth/signup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, email, password })

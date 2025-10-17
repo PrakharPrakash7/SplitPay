@@ -8,6 +8,7 @@ import {
   signInWithEmailAndPassword
 } from "firebase/auth";
 import toast from "react-hot-toast";
+import { API_BASE_URL } from "../utils/api";
 
 const BuyerLogin = () => {
   const [name, setName] = useState("");
@@ -16,7 +17,7 @@ const BuyerLogin = () => {
   const navigate = useNavigate(); // ✅ right place for a hook!
 
   const loginBackend = async (name, email, uid) => {
-    const res = await fetch("http://localhost:5000/api/buyer/login", {
+    const res = await fetch(`${API_BASE_URL}/api/buyer/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, email, firebaseUid: uid }),

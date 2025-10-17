@@ -17,22 +17,29 @@ router.get("/", verifyToken, getAllDeals);
 router.post("/:id/mark-received", verifyToken, async (req, res) => {
   try {
     const dealId = req.params.id;
-    const buyerId = req.user.userId;
+    const buyerId = req.user.id; // Changed from req.user.userId to req.user.id
+
+    console.log(`🔍 Mark as received request - DealID: ${dealId}, BuyerID: ${buyerId}`);
 
     // Find the deal
     const deal = await Deal.findById(dealId);
     
     if (!deal) {
+      console.log("❌ Deal not found");
       return res.status(404).json({ error: "Deal not found" });
     }
 
+    console.log(`📦 Deal found - BuyerID in deal: ${deal.buyerId}, Requesting user: ${buyerId}`);
+
     // Verify the user is the buyer
-    if (deal.buyerId.toString() !== buyerId) {
+    if (deal.buyerId.toString() !== buyerId.toString()) {
+      console.log("❌ User is not the buyer of this deal");
       return res.status(403).json({ error: "Only the buyer can mark the order as received" });
     }
 
     // Check if deal is in disbursed status
     if (deal.status !== 'disbursed') {
+      console.log(`❌ Deal status is ${deal.status}, not disbursed`);
       return res.status(400).json({ 
         error: "Order can only be marked as received after payment has been disbursed",
         currentStatus: deal.status 
