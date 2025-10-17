@@ -28,10 +28,26 @@ export const createDeal = async (req, res) => {
     // Use provided totalPrice or fallback to scraped price
     const finalPrice = totalPrice || product.price;
     
-    const discountedPrice = Math.round(
-      finalPrice * (1 - (discountPct || 10) / 100)
-    );
-
+    // Extract bank discount from bank offers (if available)
+    let totalBankDiscount = 0;
+    if (product.bankOffers && product.bankOffers.length > 0) {
+      // Try to extract numerical discount from the first bank offer
+      const firstOffer = product.bankOffers[0];
+      // Look for patterns like "₹4000 discount", "4000 off", "Save ₹4000"
+      const discountMatch = firstOffer.discount.match(/[₹\s]?([\d,]+)/);
+      if (discountMatch) {
+        totalBankDiscount = parseInt(discountMatch[1].replace(/,/g, ''));
+      }
+    }
+    
+    // Calculate dynamic discount split (70-20-10)
+    const buyerDiscount = Math.round(totalBankDiscount * 0.70);        // 70% to buyer
+    const cardholderCommission = Math.round(totalBankDiscount * 0.20); // 20% to cardholder
+    const platformFee = Math.round(totalBankDiscount * 0.10);          // 10% to platform
+    
+    // Final price after buyer discount
+    const discountedPrice = finalPrice - buyerDiscount;
+    
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes expiry
 
     const deal = await Deal.create({
@@ -42,6 +58,10 @@ export const createDeal = async (req, res) => {
       },
       discountPct: discountPct || 10,
       discountedPrice,
+      totalBankDiscount,
+      buyerDiscount,
+      cardholderCommission,
+      platformFee,
       expiresAt,
       description: description || `Deal for ${product.title}`,
     });

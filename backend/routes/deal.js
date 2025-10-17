@@ -3,6 +3,7 @@ import express from "express";
 import { createDeal, acceptDeal, getAllDeals } from "../controllers/dealsController.js";
 import { verifyToken } from "../middleware/authMiddleware.js";
 import Deal from "../models/Deal.js";
+import { uploadInvoice } from "../utils/uploadConfig.js";
 
 const router = express.Router();
 
@@ -76,6 +77,61 @@ router.post("/:id/mark-received", verifyToken, async (req, res) => {
   } catch (error) {
     console.error("❌ Error marking order as received:", error);
     res.status(500).json({ error: "Failed to mark order as received" });
+  }
+});
+
+// Upload invoice PDF (cardholder only)
+router.post("/:id/upload-invoice", verifyToken, uploadInvoice.single('invoice'), async (req, res) => {
+  try {
+    const dealId = req.params.id;
+    const cardholderId = req.user.id;
+
+    console.log(`📁 Invoice upload request - DealID: ${dealId}, CardholderID: ${cardholderId}`);
+
+    if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
+
+    // Find the deal
+    const deal = await Deal.findById(dealId);
+    
+    if (!deal) {
+      console.log("❌ Deal not found");
+      return res.status(404).json({ error: "Deal not found" });
+    }
+
+    // Verify the user is the cardholder
+    if (!deal.cardholderId || deal.cardholderId.toString() !== cardholderId.toString()) {
+      console.log("❌ User is not the cardholder of this deal");
+      return res.status(403).json({ error: "Only the cardholder can upload invoice" });
+    }
+
+    // Save the invoice file URL
+    const invoiceUrl = `/uploads/invoices/${req.file.filename}`;
+    deal.invoiceUrl = invoiceUrl;
+    await deal.save();
+
+    console.log(`✅ Invoice uploaded successfully: ${invoiceUrl}`);
+
+    // Emit Socket.io event to notify buyer
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('invoiceUploaded', {
+        dealId: deal._id,
+        invoiceUrl: invoiceUrl,
+        message: '📄 Invoice has been uploaded'
+      });
+    }
+
+    res.json({ 
+      success: true, 
+      message: "Invoice uploaded successfully",
+      invoiceUrl: invoiceUrl
+    });
+
+  } catch (error) {
+    console.error("❌ Error uploading invoice:", error);
+    res.status(500).json({ error: "Failed to upload invoice" });
   }
 });
 

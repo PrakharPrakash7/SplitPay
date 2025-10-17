@@ -5,7 +5,7 @@ import { API_BASE_URL } from '../utils/api';
 const OrderSubmissionForm = ({ dealId, shippingAddress, product, onClose }) => {
   const [orderId, setOrderId] = useState('');
   const [trackingUrl, setTrackingUrl] = useState('');
-  const [invoiceUrl, setInvoiceUrl] = useState('');
+  const [invoiceFile, setInvoiceFile] = useState(null);
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e) => {
@@ -21,20 +21,43 @@ const OrderSubmissionForm = ({ dealId, shippingAddress, product, onClose }) => {
       return;
     }
 
-    if (!invoiceUrl.trim()) {
-      toast.error('Please enter invoice URL');
+    if (!invoiceFile) {
+      toast.error('Please upload invoice PDF file');
       return;
     }
 
-    // Validate that invoice URL ends with .pdf
-    if (!invoiceUrl.trim().toLowerCase().endsWith('.pdf') && !invoiceUrl.trim().includes('/invoice') && !invoiceUrl.trim().includes('/order')) {
-      toast.error('Invoice URL should be a PDF file or a valid invoice/order page');
+    // Validate file type
+    if (invoiceFile.type !== 'application/pdf') {
+      toast.error('Only PDF files are allowed for invoice');
       return;
     }
 
     setLoading(true);
     try {
       const token = localStorage.getItem('token');
+      
+      // First, upload the invoice PDF
+      const formData = new FormData();
+      formData.append('invoice', invoiceFile);
+      
+      const uploadRes = await fetch(`${API_BASE_URL}/api/deals/${dealId}/upload-invoice`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData
+      });
+
+      if (!uploadRes.ok) {
+        const error = await uploadRes.json();
+        toast.error(error.error || 'Failed to upload invoice');
+        setLoading(false);
+        return;
+      }
+
+      const { invoiceUrl } = await uploadRes.json();
+
+      // Then submit order details
       const res = await fetch(`${API_BASE_URL}/api/payment/submit-order`, {
         method: 'POST',
         headers: {
@@ -45,7 +68,7 @@ const OrderSubmissionForm = ({ dealId, shippingAddress, product, onClose }) => {
           dealId,
           orderId: orderId.trim(),
           trackingUrl: trackingUrl.trim(),
-          invoiceUrl: invoiceUrl.trim()
+          invoiceUrl: invoiceUrl
         })
       });
 
@@ -183,19 +206,23 @@ const OrderSubmissionForm = ({ dealId, shippingAddress, product, onClose }) => {
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            Invoice/Order Details URL <span className="text-red-500">*</span>
+            Invoice PDF File <span className="text-red-500">*</span>
           </label>
           <input
-            type="url"
-            value={invoiceUrl}
-            onChange={(e) => setInvoiceUrl(e.target.value)}
+            type="file"
+            accept="application/pdf"
+            onChange={(e) => setInvoiceFile(e.target.files[0])}
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            placeholder="https://www.flipkart.com/order/123456 or link to invoice PDF"
             required
           />
           <p className="text-xs text-gray-500 mt-1">
-            📄 Link to view invoice or order details page
+            📄 Upload the invoice PDF file (max 5MB)
           </p>
+          {invoiceFile && (
+            <p className="text-sm text-green-600 mt-2">
+              ✓ Selected: {invoiceFile.name} ({(invoiceFile.size / 1024).toFixed(2)} KB)
+            </p>
+          )}
         </div>
 
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">

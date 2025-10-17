@@ -36,6 +36,9 @@ export { io };
 app.use(cors());
 app.use(express.json());
 
+// Serve uploaded files (invoices)
+app.use('/uploads', express.static('uploads'));
+
 monitorDealExpiry();
 
 // Routes

@@ -466,6 +466,15 @@ const BuyerDashboard = () => {
                         <p className="text-sm text-gray-600">
                           Discounted Price: <span className="font-semibold text-green-600">₹{deal.discountedPrice}</span>
                         </p>
+                        {deal.totalBankDiscount > 0 && (
+                          <div className="text-xs text-gray-500 mt-2 border-t pt-2">
+                            <p className="font-semibold text-gray-700 mb-1">💳 Discount Breakdown:</p>
+                            <p>• Total Bank Discount: <span className="font-semibold">₹{deal.totalBankDiscount}</span></p>
+                            <p className="text-green-600">• Your Savings (70%): <span className="font-semibold">₹{deal.buyerDiscount}</span></p>
+                            <p className="text-blue-600">• Cardholder Commission (20%): <span className="font-semibold">₹{deal.cardholderCommission}</span></p>
+                            <p className="text-purple-600">• Platform Fee (10%): <span className="font-semibold">₹{deal.platformFee}</span></p>
+                          </div>
+                        )}
                         <p className="text-sm">
                           Status: <span className={`font-semibold ${
                             deal.status === 'matched' ? 'text-green-600' :
