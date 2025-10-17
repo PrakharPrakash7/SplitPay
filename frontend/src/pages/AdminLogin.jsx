@@ -1,6 +1,7 @@
 import { useState } from "react";
 import toast from "react-hot-toast";
 import { useNavigate } from "react-router-dom";
+import { API_BASE_URL } from "../utils/api";
 
 const AdminLogin = () => {
   const [email, setEmail] = useState("");
@@ -9,7 +10,7 @@ const AdminLogin = () => {
 
   const handleLogin = async () => {
     try {
-      const res = await fetch("http://localhost:5000/api/auth/admin/login", {
+      const res = await fetch(`${API_BASE_URL}/api/auth/admin/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password })
