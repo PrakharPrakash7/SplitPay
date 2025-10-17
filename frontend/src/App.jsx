@@ -10,9 +10,12 @@ import CardholderProfile from "./pages/CardholderProfile";
 import AdminLogin from "./pages/AdminLogin";
 import AdminDashboard from "./pages/AdminDashboard";
 import ProtectedRoute from "./components/ProtectedRoute";
+import { DealProvider } from "./utils/DealContext";
+
 function App() {
   return (
     <Router>
+      <DealProvider>
       <Routes>
         <Route path="/" element={<BuyerLogin />} />
        
@@ -68,6 +71,7 @@ function App() {
       </Routes>
       {/* Toast notifications mounted here */}
       <Toaster position="top-center" />
+      </DealProvider>
     </Router>
   );
 }

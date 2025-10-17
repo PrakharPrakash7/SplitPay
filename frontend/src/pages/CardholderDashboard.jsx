@@ -59,7 +59,22 @@ const CardholderDashboard = () => {
       if (response.ok) {
         const data = await response.json();
         console.log("📊 Fetched deals:", data.deals?.length || 0);
-        setDeals(data.deals || []);
+        
+        // Filter deals: show all active deals + only last 5 expired deals
+        const allDeals = data.deals || [];
+        const activeDeals = allDeals.filter(deal => deal.status !== 'expired');
+        const expiredDeals = allDeals.filter(deal => deal.status === 'expired');
+        
+        // Sort expired deals by creation date (most recent first) and take only last 5
+        const last5ExpiredDeals = expiredDeals
+          .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+          .slice(0, 5);
+        
+        // Combine active deals with last 5 expired deals
+        const filteredDeals = [...activeDeals, ...last5ExpiredDeals];
+        
+        console.log(`📋 Showing ${activeDeals.length} active + ${last5ExpiredDeals.length} expired (out of ${expiredDeals.length} total expired)`);
+        setDeals(filteredDeals);
       } else {
         console.error("Failed to fetch deals:", response.status);
         toast.error("Failed to load deals");
@@ -314,7 +329,22 @@ const CardholderDashboard = () => {
                       <div className="space-y-2 text-sm">
                         <p><span className="font-semibold">Price:</span> ₹{deal.product?.price || 0}</p>
                         <p><span className="font-semibold">Discount:</span> {deal.discountPercentage}%</p>
-                        <p><span className="font-semibold">Commission:</span> ₹{deal.commissionForCardholder || 0}</p>
+                        
+                        {deal.totalBankDiscount > 0 ? (
+                          <div className="border-t pt-2 mt-2">
+                            <p className="font-semibold text-blue-600 mb-1">
+                              💰 Your Commission (20%): ₹{deal.cardholderCommission}
+                            </p>
+                            <div className="text-xs text-gray-500 space-y-0.5">
+                              <p>• Total Bank Discount: ₹{deal.totalBankDiscount}</p>
+                              <p className="text-green-600">• Buyer gets (70%): ₹{deal.buyerDiscount}</p>
+                              <p className="text-purple-600">• Platform (10%): ₹{deal.platformFee}</p>
+                            </div>
+                          </div>
+                        ) : (
+                          <p><span className="font-semibold">Commission:</span> ₹{deal.commissionForCardholder || 0}</p>
+                        )}
+                        
                         <p><span className="font-semibold">Buyer:</span> {deal.buyerId?.name || 'Unknown'}</p>
                         {deal.status === 'pending' && (
                           <p className={`font-semibold ${isExpired ? 'text-red-600' : 'text-green-600'}`}>
