@@ -889,7 +889,7 @@ router.post('/cancel-deal', verifyToken, async (req, res) => {
     }
 
     // Check if deal can be cancelled
-    if (['shipped', 'payment_captured', 'disbursed', 'completed', 'expired', 'refunded'].includes(deal.status)) {
+  if (['shipped', 'payment_captured', 'disbursed', 'completed', 'expired', 'refunded', 'cancelled'].includes(deal.status)) {
       return res.status(400).json({ error: 'Deal cannot be cancelled at this stage' });
     }
 
@@ -911,7 +911,7 @@ router.post('/cancel-deal', verifyToken, async (req, res) => {
     }
 
     // Update deal status
-    deal.status = 'expired';
+  deal.status = 'cancelled';
     deal.cancelledBy = isBuyer ? 'buyer' : 'cardholder';
     deal.cancelledAt = new Date();
     deal.cancelReason = reason || `Cancelled by ${isBuyer ? 'buyer' : 'cardholder'}`;

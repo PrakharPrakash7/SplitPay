@@ -61,18 +61,17 @@ const CardholderDashboard = () => {
         
         // Filter deals: show all active deals + only last 5 expired deals
         const allDeals = data.deals || [];
-        const activeDeals = allDeals.filter(deal => deal.status !== 'expired');
-        const expiredDeals = allDeals.filter(deal => deal.status === 'expired');
-        
-        // Sort expired deals by creation date (most recent first) and take only last 5
-        const last5ExpiredDeals = expiredDeals
+        const inactiveStatuses = ['expired', 'cancelled', 'refunded', 'failed'];
+        const activeDeals = allDeals.filter(deal => !inactiveStatuses.includes(deal.status));
+        const historicalDeals = allDeals
+          .filter(deal => inactiveStatuses.includes(deal.status))
           .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
           .slice(0, 5);
         
-        // Combine active deals with last 5 expired deals
-        const filteredDeals = [...activeDeals, ...last5ExpiredDeals];
+        // Combine active deals with last 5 historical deals
+        const filteredDeals = [...activeDeals, ...historicalDeals];
         
-        console.log(`📋 Showing ${activeDeals.length} active + ${last5ExpiredDeals.length} expired (out of ${expiredDeals.length} total expired)`);
+        console.log(`📋 Showing ${activeDeals.length} active + ${historicalDeals.length} historical (statuses: ${inactiveStatuses.join(', ')})`);
         setDeals(filteredDeals);
       } else {
         console.error("Failed to fetch deals:", response.status);
@@ -373,6 +372,10 @@ const CardholderDashboard = () => {
                             deal.status === 'shipped' ? 'bg-teal-100 text-teal-800' :
                             deal.status === 'disbursed' ? 'bg-purple-100 text-purple-800' :
                             deal.status === 'completed' ? 'bg-green-100 text-green-800' :
+                            deal.status === 'expired' ? 'bg-red-100 text-red-800' :
+                            deal.status === 'cancelled' ? 'bg-red-100 text-red-800' :
+                            deal.status === 'refunded' ? 'bg-red-100 text-red-800' :
+                            deal.status === 'failed' ? 'bg-red-100 text-red-800' :
                             'bg-gray-100 text-gray-800'
                           }`}>
                             {deal.status.replace(/_/g, ' ').toUpperCase()}
@@ -444,6 +447,34 @@ const CardholderDashboard = () => {
                       {deal.status === 'order_placed' && (
                         <div className="mt-4 p-3 bg-orange-50 rounded text-center">
                           <p className="text-sm text-orange-800">📦 Order submitted! Waiting for shipping...</p>
+                        </div>
+                      )}
+
+                      {deal.status === 'cancelled' && (
+                        <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded text-center">
+                          <p className="text-sm text-red-800 font-semibold">❌ Deal Cancelled</p>
+                          {deal.cancelledBy && (
+                            <p className="text-sm text-red-700 mt-1">Cancelled by {deal.cancelledBy}</p>
+                          )}
+                          {deal.cancelReason && (
+                            <p className="text-xs text-red-600 mt-1">Reason: {deal.cancelReason}</p>
+                          )}
+                        </div>
+                      )}
+
+                      {deal.status === 'expired' && (
+                        <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded text-center">
+                          <p className="text-sm text-red-800 font-semibold">⏰ Deal Expired</p>
+                          {deal.cancelReason && (
+                            <p className="text-xs text-red-600 mt-1">Reason: {deal.cancelReason}</p>
+                          )}
+                        </div>
+                      )}
+
+                      {deal.status === 'refunded' && (
+                        <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded text-center">
+                          <p className="text-sm text-red-800 font-semibold">💸 Payment Refunded</p>
+                          <p className="text-xs text-red-600 mt-1">Deal closed and payment returned to buyer.</p>
                         </div>
                       )}
 

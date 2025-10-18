@@ -38,7 +38,8 @@ const DealSchema = new mongoose.Schema({
       "completed",         // Deal fully completed
       "expired",           // Deal expired
       "failed",            // Deal failed
-      "refunded"           // Payment refunded to buyer
+      "refunded",          // Payment refunded to buyer
+      "cancelled"          // Deal cancelled manually
     ], 
     default: "pending" 
   },

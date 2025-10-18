@@ -19,6 +19,15 @@ const BuyerDashboard = () => {
   const [showDealModal, setShowDealModal] = useState(false);
   const [modalDeal, setModalDeal] = useState(null);
 
+  const resolveInvoiceUrl = (url) => {
+    if (!url) return null;
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      return url;
+    }
+    const sanitized = url.startsWith('/') ? url : `/${url}`;
+    return `${API_BASE_URL}${sanitized}`;
+  };
+
   // Update current time every second for live countdown
   useEffect(() => {
     const interval = setInterval(() => {
@@ -402,31 +411,14 @@ const BuyerDashboard = () => {
 
       {/* Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Create Deal Form */}
-        <div className="bg-white rounded-lg shadow p-6 mb-8">
-          <h2 className="text-2xl font-bold mb-4">Create New Deal</h2>
-          <form onSubmit={handleCreateDeal} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Product URL (Flipkart or Amazon)
-              </label>
-              <input
-                type="url"
-                value={productUrl}
-                onChange={(e) => setProductUrl(e.target.value)}
-                placeholder="https://www.flipkart.com/..."
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                disabled={creating}
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={creating}
-              className="w-full bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
-            >
-              {creating ? 'Creating Deal...' : 'Create Deal (10% discount)'}
-            </button>
-          </form>
+        {/* Create Deal Button */}
+        <div className="mb-8">
+          <button
+            onClick={() => { setModalDeal(null); setShowDealModal(true); }}
+            className="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white px-8 py-6 rounded-lg hover:from-blue-700 hover:to-purple-700 shadow-lg text-xl font-bold"
+          >
+            🛒 Create New Deal
+          </button>
         </div>
 
         {/* Deals List */}
@@ -449,6 +441,9 @@ const BuyerDashboard = () => {
                   className={`border rounded-lg p-4 ${
                     deal.status === 'matched' ? 'border-green-500 bg-green-50' :
                     deal.status === 'expired' ? 'border-red-500 bg-red-50' :
+                    deal.status === 'cancelled' ? 'border-red-500 bg-red-50' :
+                    deal.status === 'refunded' ? 'border-red-500 bg-red-50' :
+                    deal.status === 'failed' ? 'border-red-500 bg-red-50' :
                     'border-gray-300'
                   }`}
                 >
@@ -479,6 +474,9 @@ const BuyerDashboard = () => {
                           Status: <span className={`font-semibold ${
                             deal.status === 'matched' ? 'text-green-600' :
                             deal.status === 'expired' ? 'text-red-600' :
+                            deal.status === 'cancelled' ? 'text-red-600' :
+                            deal.status === 'refunded' ? 'text-red-600' :
+                            deal.status === 'failed' ? 'text-red-600' :
                             deal.status === 'pending' ? 'text-yellow-600' :
                             deal.status === 'payment_authorized' ? 'text-green-600' :
                             deal.status === 'address_shared' ? 'text-purple-600' :
@@ -607,7 +605,7 @@ const BuyerDashboard = () => {
                             {deal.invoiceUrl && (
                               <p>
                                 <a 
-                                  href={deal.invoiceUrl} 
+                                  href={resolveInvoiceUrl(deal.invoiceUrl)} 
                                   target="_blank" 
                                   rel="noopener noreferrer"
                                   className="text-blue-600 hover:text-blue-800 font-semibold underline"
@@ -620,6 +618,52 @@ const BuyerDashboard = () => {
                           <p className="text-sm text-orange-600 mt-3 font-medium">
                             ⏳ Waiting for shipping confirmation...
                           </p>
+                        </div>
+                      )}
+
+                      {deal.status === 'cancelled' && (
+                        <div className="mt-4 p-4 bg-red-50 border-2 border-red-300 rounded-lg">
+                          <p className="text-sm text-red-900 font-semibold mb-2">
+                            ❌ Deal Cancelled
+                          </p>
+                          {deal.cancelledBy && (
+                            <p className="text-sm text-red-700">Cancelled by {deal.cancelledBy}</p>
+                          )}
+                          {deal.cancelReason && (
+                            <p className="text-xs text-red-600 mt-1">Reason: {deal.cancelReason}</p>
+                          )}
+                          {deal.escrowStatus === 'refunded' && (
+                            <p className="text-xs text-red-600 mt-2">Refund has been initiated for your payment.</p>
+                          )}
+                        </div>
+                      )}
+
+                      {deal.status === 'expired' && (
+                        <div className="mt-4 p-4 bg-red-50 border-2 border-red-300 rounded-lg">
+                          <p className="text-sm text-red-900 font-semibold mb-2">
+                            ⏰ Deal Expired
+                          </p>
+                          {deal.cancelReason && (
+                            <p className="text-xs text-red-600 mt-1">Reason: {deal.cancelReason}</p>
+                          )}
+                        </div>
+                      )}
+
+                      {deal.status === 'refunded' && (
+                        <div className="mt-4 p-4 bg-red-50 border-2 border-red-300 rounded-lg">
+                          <p className="text-sm text-red-900 font-semibold mb-2">
+                            💸 Payment Refunded
+                          </p>
+                          <p className="text-xs text-red-600">Payment has been returned to your source account.</p>
+                        </div>
+                      )}
+
+                      {deal.status === 'failed' && (
+                        <div className="mt-4 p-4 bg-red-50 border-2 border-red-300 rounded-lg">
+                          <p className="text-sm text-red-900 font-semibold mb-2">
+                            ⚠️ Deal Failed
+                          </p>
+                          <p className="text-xs text-red-600">Something went wrong during processing. Please review and retry if needed.</p>
                         </div>
                       )}
 
@@ -645,7 +689,7 @@ const BuyerDashboard = () => {
                               {deal.invoiceUrl && (
                                 <p className="text-center">
                                   <a 
-                                    href={deal.invoiceUrl} 
+                                    href={resolveInvoiceUrl(deal.invoiceUrl)} 
                                     target="_blank" 
                                     rel="noopener noreferrer"
                                     className="text-blue-600 hover:text-blue-800 font-semibold underline"
@@ -682,7 +726,7 @@ const BuyerDashboard = () => {
                               {deal.invoiceUrl && (
                                 <p className="text-center">
                                   <a 
-                                    href={deal.invoiceUrl} 
+                                    href={resolveInvoiceUrl(deal.invoiceUrl)} 
                                     target="_blank" 
                                     rel="noopener noreferrer"
                                     className="text-blue-600 hover:text-blue-800 font-semibold underline"
@@ -727,7 +771,7 @@ const BuyerDashboard = () => {
                               {deal.invoiceUrl && (
                                 <p className="text-center">
                                   <a 
-                                    href={deal.invoiceUrl} 
+                                    href={resolveInvoiceUrl(deal.invoiceUrl)} 
                                     target="_blank" 
                                     rel="noopener noreferrer"
                                     className="text-blue-600 hover:text-blue-800 font-semibold underline"
@@ -743,6 +787,19 @@ const BuyerDashboard = () => {
                           </p>
                         </div>
                       )}
+
+                      {/* View Full Details Button - Show for all deals */}
+                      <div className="mt-4 pt-4 border-t border-gray-200">
+                        <button
+                          onClick={() => {
+                            setModalDeal(deal);
+                            setShowDealModal(true);
+                          }}
+                          className="w-full bg-gradient-to-r from-blue-500 to-purple-500 text-white py-2 px-4 rounded-lg hover:from-blue-600 hover:to-purple-600 font-semibold shadow-md"
+                        >
+                          👁️ View Full Details in Modal
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -773,17 +830,22 @@ const BuyerDashboard = () => {
       )}
 
       {/* Deal Flow Modal */}
-      {showDealModal && modalDeal && (
+      {showDealModal && (
         <DealFlowModal
           deal={modalDeal}
+          mode={modalDeal ? 'view' : 'create'}
           userRole="buyer"
           onClose={() => {
             console.log("❌ Deal modal closed");
             setShowDealModal(false);
             setModalDeal(null);
           }}
-          onSuccess={() => {
+          onSuccess={(createdDeal) => {
             console.log("✅ Deal action completed");
+            if (createdDeal) {
+              // New deal created - set it as modalDeal to show waiting state
+              setModalDeal(createdDeal);
+            }
             fetchDeals(); // Refresh deals
           }}
         />

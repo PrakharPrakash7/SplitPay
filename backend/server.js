@@ -33,11 +33,24 @@ const io = new Server(httpServer, {
 // Export io for use in other files
 export { io };
 
+// Make io available to routes
+app.set('io', io);
+
 app.use(cors());
 app.use(express.json());
 
-// Serve uploaded files (invoices)
-app.use('/uploads', express.static('uploads'));
+// Serve uploaded files (invoices) with CORS headers
+app.use('/uploads', express.static('uploads', {
+  setHeaders: (res, path) => {
+    res.set('Access-Control-Allow-Origin', 'http://localhost:5173');
+    res.set('Access-Control-Allow-Methods', 'GET');
+    res.set('Access-Control-Allow-Headers', 'Content-Type');
+    // Set proper content type for PDF files
+    if (path.endsWith('.pdf')) {
+      res.set('Content-Type', 'application/pdf');
+    }
+  }
+}));
 
 monitorDealExpiry();
 

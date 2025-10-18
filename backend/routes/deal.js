@@ -1,4 +1,8 @@
 import express from "express";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import axios from "axios";
 
 import { createDeal, acceptDeal, getAllDeals } from "../controllers/dealsController.js";
 import { verifyToken } from "../middleware/authMiddleware.js";
@@ -7,6 +11,38 @@ import { uploadInvoice } from "../utils/uploadConfig.js";
 import cloudinary from "../utils/cloudinaryConfig.js";
 
 const router = express.Router();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const localInvoicesDir = path.join(__dirname, "../uploads/invoices");
+
+const ensureLocalInvoicesDir = () => {
+  if (!fs.existsSync(localInvoicesDir)) {
+    fs.mkdirSync(localInvoicesDir, { recursive: true });
+  }
+};
+
+const saveInvoiceLocally = (dealId, file) => {
+  ensureLocalInvoicesDir();
+
+  const extension = path.extname(file.originalname || "").toLowerCase();
+  const safeExtension = extension === ".pdf" ? ".pdf" : ".pdf";
+  const filename = `invoice-${dealId}-${Date.now()}${safeExtension}`;
+  const fullPath = path.join(localInvoicesDir, filename);
+
+  const dataBuffer = file.buffer || (file.path ? fs.readFileSync(file.path) : null);
+
+  if (!dataBuffer) {
+    throw new Error("Unable to persist invoice locally: no file buffer available");
+  }
+
+  fs.writeFileSync(fullPath, dataBuffer);
+
+  file.filename = filename;
+  file.path = fullPath;
+
+  return { filename, fullPath };
+};
 
 // Buyer creates a new deal
 router.post("/", verifyToken, createDeal);
@@ -108,6 +144,8 @@ router.post("/:id/upload-invoice", verifyToken, uploadInvoice.single('invoice'),
     }
 
     let invoiceUrl;
+    const baseUrl = process.env.BASE_URL || `http://localhost:${process.env.PORT || 5000}`;
+    const buildLocalInvoiceUrl = (name) => `${baseUrl}/uploads/invoices/${name}`;
 
     // Check if Cloudinary is configured
     const useCloudinary = process.env.CLOUDINARY_CLOUD_NAME && 
@@ -115,26 +153,53 @@ router.post("/:id/upload-invoice", verifyToken, uploadInvoice.single('invoice'),
                           process.env.CLOUDINARY_API_SECRET;
 
     if (useCloudinary) {
-      // Upload to Cloudinary
-      console.log('☁️ Uploading to Cloudinary...');
-      
-      // Convert buffer to base64
-      const b64 = Buffer.from(req.file.buffer).toString('base64');
-      const dataURI = `data:${req.file.mimetype};base64,${b64}`;
-      
-      const result = await cloudinary.uploader.upload(dataURI, {
-        resource_type: 'raw',
-        folder: 'splitpay/invoices',
-        public_id: `invoice-${dealId}-${Date.now()}`,
-        format: 'pdf'
-      });
-      
-      invoiceUrl = result.secure_url;
-      console.log(`✅ Uploaded to Cloudinary: ${invoiceUrl}`);
+      try {
+        // Upload to Cloudinary
+        console.log('☁️ Uploading to Cloudinary...');
+        
+        // Convert buffer to base64
+        const b64 = Buffer.from(req.file.buffer).toString('base64');
+        const dataURI = `data:${req.file.mimetype};base64,${b64}`;
+        
+        const result = await cloudinary.uploader.upload(dataURI, {
+          resource_type: 'raw',
+          folder: 'splitpay/invoices',
+          public_id: `invoice-${dealId}-${Date.now()}`,
+          format: 'pdf'
+        });
+        
+        invoiceUrl = result.secure_url;
+        console.log(`✅ Uploaded to Cloudinary: ${invoiceUrl}`);
+
+        try {
+          const headResponse = await axios.head(invoiceUrl);
+          if (headResponse.status < 200 || headResponse.status >= 300) {
+            throw new Error(`Cloudinary accessibility check failed with status ${headResponse.status}`);
+          }
+        } catch (validationError) {
+          console.warn(`⚠️ Cloudinary URL not accessible: ${validationError.message}. Falling back to local storage.`);
+          const { filename, fullPath } = saveInvoiceLocally(dealId, req.file);
+          invoiceUrl = buildLocalInvoiceUrl(filename);
+          console.log(`✅ Saved locally after Cloudinary fallback: ${invoiceUrl}`);
+          console.log(`📁 Local path: ${fullPath}`);
+        }
+      } catch (cloudError) {
+        console.error("❌ Cloudinary upload failed:", cloudError.message || cloudError);
+        const { filename, fullPath } = saveInvoiceLocally(dealId, req.file);
+        invoiceUrl = buildLocalInvoiceUrl(filename);
+        console.log(`✅ Saved locally due to Cloudinary failure: ${invoiceUrl}`);
+        console.log(`📁 Local path: ${fullPath}`);
+      }
     } else {
-      // Use local storage
-      invoiceUrl = `/uploads/invoices/${req.file.filename}`;
+      // Use local storage - generate full URL
+      invoiceUrl = buildLocalInvoiceUrl(req.file.filename);
       console.log(`✅ Saved locally: ${invoiceUrl}`);
+      if (req.file.path) {
+        console.log(`📁 File saved at: ${req.file.path}`);
+      }
+      if (typeof req.file.size === 'number') {
+        console.log(`📊 File size: ${req.file.size} bytes`);
+      }
     }
 
     // Save the invoice URL to deal
