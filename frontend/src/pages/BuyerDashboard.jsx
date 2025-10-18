@@ -28,6 +28,38 @@ const BuyerDashboard = () => {
     return `${API_BASE_URL}${sanitized}`;
   };
 
+  const getStatusLabel = (deal) => {
+    const labels = {
+      pending: 'Finding Cardholder',
+      matched: 'Awaiting Payment',
+      awaiting_payment: 'Awaiting Payment',
+      payment_authorized: 'Provide Shipping Address',
+      address_shared: 'Awaiting Order Placement',
+      order_placed: 'Order Placed',
+      shipped: 'Order Shipped',
+      payment_captured: 'Payment Captured',
+      disbursed: 'Payout In Progress',
+      completed: 'Deal Completed',
+      expired: 'Deal Expired',
+      cancelled: 'Deal Cancelled',
+      refunded: 'Payment Refunded',
+      failed: 'Deal Failed'
+    };
+
+    return labels[deal.status] || deal.status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  };
+
+  const getStatusTextClass = (status) => {
+    if (status === 'pending') return 'text-yellow-600';
+    if (['matched', 'awaiting_payment'].includes(status)) return 'text-blue-600';
+    if (['payment_authorized', 'address_shared'].includes(status)) return 'text-purple-600';
+    if (status === 'order_placed') return 'text-orange-600';
+    if (status === 'shipped') return 'text-teal-600';
+    if (['payment_captured', 'disbursed', 'completed'].includes(status)) return 'text-green-600';
+    if (['expired', 'cancelled', 'refunded', 'failed'].includes(status)) return 'text-red-600';
+    return 'text-gray-600';
+  };
+
   // Update current time every second for live countdown
   useEffect(() => {
     const interval = setInterval(() => {
@@ -439,12 +471,11 @@ const BuyerDashboard = () => {
                 <div 
                   key={deal._id} 
                   className={`border rounded-lg p-4 ${
-                    deal.status === 'matched' ? 'border-green-500 bg-green-50' :
-                    deal.status === 'expired' ? 'border-red-500 bg-red-50' :
-                    deal.status === 'cancelled' ? 'border-red-500 bg-red-50' :
-                    deal.status === 'refunded' ? 'border-red-500 bg-red-50' :
-                    deal.status === 'failed' ? 'border-red-500 bg-red-50' :
-                    'border-gray-300'
+                    ['matched', 'payment_authorized', 'address_shared', 'order_placed', 'shipped', 'disbursed', 'completed'].includes(deal.status)
+                      ? 'border-blue-500 bg-blue-50'
+                      : ['expired', 'cancelled', 'refunded', 'failed'].includes(deal.status)
+                        ? 'border-red-500 bg-red-50'
+                        : 'border-gray-300'
                   }`}
                 >
                   <div className="flex items-start space-x-4">
@@ -581,7 +612,7 @@ const BuyerDashboard = () => {
                         </div>
                       )}
 
-                      {deal.status === 'order_placed' && deal.orderIdFromCardholder && (
+                      {deal.status === 'order_placed' && (
                         <div className="mt-4 p-4 bg-orange-50 border-2 border-orange-300 rounded-lg">
                           <p className="text-sm text-orange-900 font-semibold mb-2">
                             📦 Order Details:
@@ -646,6 +677,9 @@ const BuyerDashboard = () => {
                           {deal.cancelReason && (
                             <p className="text-xs text-red-600 mt-1">Reason: {deal.cancelReason}</p>
                           )}
+                          {deal.escrowStatus === 'refunded' && (
+                            <p className="text-xs text-red-600 mt-2">Any payment hold has been refunded.</p>
+                          )}
                         </div>
                       )}
 
@@ -682,7 +716,7 @@ const BuyerDashboard = () => {
                                     rel="noopener noreferrer"
                                     className="text-blue-600 hover:text-blue-800 font-semibold underline"
                                   >
-                                    � Track Your Shipment →
+                                    📦 Track Your Shipment →
                                   </a>
                                 </p>
                               )}

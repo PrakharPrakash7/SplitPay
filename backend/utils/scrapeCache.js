@@ -11,6 +11,97 @@ const fallback = {
   bankOffers: []
 };
 
+const PLATFORM_KEYWORDS = [
+  "amazon",
+  "flipkart",
+  "myntra",
+  "ajio",
+  "meesho",
+  "tatacliq",
+  "croma",
+  "reliance digital"
+];
+
+function sanitizeTitle(rawTitle, fallbackTitle = "") {
+  if (!rawTitle || typeof rawTitle !== "string") {
+    return fallbackTitle;
+  }
+
+  let title = rawTitle.replace(/\s+/g, " ").trim();
+
+  title = title.replace(/^(buy|shop|purchase)\s+/i, "");
+  title = title.replace(/\b(at\s+best\s+price|best\s+price|with offers?)\b.*$/i, "");
+  title = title.replace(/\b(online shopping|online store)\b.*$/i, "");
+  title = title.replace(/\s+online\s*(?:-|:|\||$).*/i, "");
+
+  for (const keyword of PLATFORM_KEYWORDS) {
+    const pattern = new RegExp("\\s*(?:\\||-|:)?\\s*(?:official\\s+store)?\\s*(?:on|at)?\\s*" + keyword + "(?:\\.com|\\.in)?\\s*$", "i");
+    title = title.replace(pattern, "");
+  }
+
+  title = title.replace(/\s*[:|-]\s*(official store|online store).*/i, "");
+
+  const firstWord = title.split(/\s+/)[0] || "";
+  if (firstWord) {
+    const duplicateBrandPattern = new RegExp("\\s*-\\s*" + firstWord + "\\s*$", "i");
+    title = title.replace(duplicateBrandPattern, "");
+  }
+
+  title = title.replace(/\s*(?:\||-|:)\s*$/g, "");
+  title = title.trim();
+
+  return title || fallbackTitle;
+}
+
+function detectCardType(offerText) {
+  if (!offerText) {
+    return null;
+  }
+
+  const normalized = offerText.toLowerCase();
+
+  if (normalized.includes("debit card")) {
+    return "debit";
+  }
+  if (normalized.includes("credit card")) {
+    return "credit";
+  }
+  if (normalized.includes("emi card")) {
+    return "emi";
+  }
+  if (normalized.includes("prepaid card")) {
+    return "prepaid";
+  }
+  if (normalized.includes("card")) {
+    return "card";
+  }
+  return null;
+}
+
+function extractDiscountDetails(offerText) {
+  if (!offerText) {
+    return { amount: null, percent: null };
+  }
+
+  const compactText = offerText.replace(/\s+/g, " ");
+  const amountMatch = compactText.match(/₹\s*([\d,]+)/i);
+  const percentMatch = compactText.match(/(\d+)\s*%/i);
+
+  const amount = amountMatch ? parseFloat(amountMatch[1].replace(/,/g, "")) : null;
+  const percent = percentMatch ? parseFloat(percentMatch[1]) : null;
+
+  return { amount: Number.isFinite(amount) ? amount : null, percent: Number.isFinite(percent) ? percent : null };
+}
+
+function normalizeDescription(text, maxLength = 280) {
+  if (!text) {
+    return "";
+  }
+
+  const normalized = text.replace(/\s+/g, " ").trim();
+  return normalized.length > maxLength ? normalized.slice(0, maxLength).trim() : normalized;
+}
+
 // Rate limiting: Track last request time per domain
 const domainLastRequest = new Map();
 const RATE_LIMIT_DELAY = 5000; // 5 seconds between requests to same domain
@@ -110,8 +201,8 @@ export async function fetchProduct(url) {
         || $('h1.yhB1nd').text().trim();
     }
     
-    title = title || fallback.title;
-    
+    title = sanitizeTitle(title || fallback.title, fallback.title);
+
     // Extract image
     let image = $('meta[property="og:image"]').attr('content');
     

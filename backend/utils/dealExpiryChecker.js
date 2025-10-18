@@ -33,7 +33,7 @@ export async function checkDealExpiry() {
 
     // 2. Check payment expiry (15 minutes after acceptance)
     const paymentExpired = await Deal.find({
-      status: 'matched',
+      status: { $in: ['matched', 'awaiting_payment'] },
       paymentExpiresAt: { $lte: now, $ne: null }
     });
 
@@ -42,20 +42,27 @@ export async function checkDealExpiry() {
       deal.cancelledBy = 'system';
       deal.cancelledAt = now;
       deal.cancelReason = 'Buyer did not pay within 15 minutes';
+      deal.paymentStatus = deal.escrowStatus === 'authorized' ? 'refunded' : 'failed';
+      deal.escrowStatus = deal.escrowStatus === 'authorized' ? 'refunded' : 'none';
+
       await deal.save();
       
       console.log(`⏰ Deal ${deal._id} expired - no payment`);
       
-      // Notify both parties
+      const buyerMessage = deal.escrowStatus === 'refunded'
+        ? 'Deal expired - payment window missed. Any hold has been refunded.'
+        : 'Deal expired - payment window missed.';
+
+      // Notify buyer
       io.to(`user_${deal.buyerId}`).emit('dealExpired', {
         dealId: deal._id,
-        message: 'Deal expired - payment time exceeded'
+        message: buyerMessage
       });
       
       if (deal.cardholderId) {
         io.to(`user_${deal.cardholderId}`).emit('dealExpired', {
           dealId: deal._id,
-          message: 'Deal expired - buyer did not pay'
+          message: 'Deal expired - buyer did not pay in time'
         });
       }
     }

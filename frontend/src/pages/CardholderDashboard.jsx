@@ -14,6 +14,39 @@ const CardholderDashboard = () => {
   const [selectedDeal, setSelectedDeal] = useState(null);
   const navigate = useNavigate();
 
+  const getStatusLabel = (deal) => {
+    const labels = {
+      pending: 'Awaiting Cardholder',
+      matched: 'Buyer Payment Pending',
+      awaiting_payment: 'Buyer Payment Pending',
+      payment_authorized: 'Awaiting Buyer Address',
+      address_shared: 'Ready to Place Order',
+      order_placed: 'Order Submitted',
+      shipped: 'Order Shipped',
+      payment_captured: 'Payment Captured',
+      disbursed: 'Commission Disbursed',
+      completed: 'Deal Completed',
+      expired: 'Deal Expired',
+      cancelled: 'Deal Cancelled',
+      refunded: 'Payment Refunded',
+      failed: 'Deal Failed'
+    };
+
+    return labels[deal.status] || deal.status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  };
+
+  const getStatusBadgeClass = (status) => {
+    if (['pending'].includes(status)) return 'bg-yellow-100 text-yellow-800';
+    if (['matched', 'awaiting_payment'].includes(status)) return 'bg-blue-100 text-blue-800';
+    if (['payment_authorized', 'address_shared'].includes(status)) return 'bg-purple-100 text-purple-800';
+    if (status === 'order_placed') return 'bg-orange-100 text-orange-800';
+    if (status === 'shipped') return 'bg-teal-100 text-teal-800';
+    if (status === 'payment_captured') return 'bg-indigo-100 text-indigo-800';
+    if (['disbursed', 'completed'].includes(status)) return 'bg-green-100 text-green-800';
+    if (['expired', 'cancelled', 'refunded', 'failed'].includes(status)) return 'bg-red-100 text-red-800';
+    return 'bg-gray-100 text-gray-800';
+  };
+
   // Update current time every second for live countdown
   useEffect(() => {
     const interval = setInterval(() => {
@@ -341,7 +374,6 @@ const CardholderDashboard = () => {
                           <p><span className="font-semibold">Commission:</span> ₹{deal.commissionForCardholder || 0}</p>
                         )}
                         
-                        <p><span className="font-semibold">Buyer:</span> {deal.buyerId?.name || 'Unknown'}</p>
                         {deal.status === 'pending' && (
                           <p className={`font-semibold ${isExpired ? 'text-red-600' : 'text-green-600'}`}>
                             {isExpired ? '⏰ Expired' : `⏱️ ${timeRemaining} remaining`}
@@ -363,22 +395,8 @@ const CardholderDashboard = () => {
                           </p>
                         )}
                         <p><span className="font-semibold">Status:</span> 
-                          <span className={`ml-2 px-2 py-1 rounded text-xs ${
-                            deal.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                            deal.status === 'matched' ? 'bg-blue-100 text-blue-800' :
-                            deal.status === 'payment_authorized' ? 'bg-green-100 text-green-800' :
-                            deal.status === 'address_shared' ? 'bg-purple-100 text-purple-800' :
-                            deal.status === 'order_placed' ? 'bg-orange-100 text-orange-800' :
-                            deal.status === 'shipped' ? 'bg-teal-100 text-teal-800' :
-                            deal.status === 'disbursed' ? 'bg-purple-100 text-purple-800' :
-                            deal.status === 'completed' ? 'bg-green-100 text-green-800' :
-                            deal.status === 'expired' ? 'bg-red-100 text-red-800' :
-                            deal.status === 'cancelled' ? 'bg-red-100 text-red-800' :
-                            deal.status === 'refunded' ? 'bg-red-100 text-red-800' :
-                            deal.status === 'failed' ? 'bg-red-100 text-red-800' :
-                            'bg-gray-100 text-gray-800'
-                          }`}>
-                            {deal.status.replace(/_/g, ' ').toUpperCase()}
+                          <span className={`ml-2 px-2 py-1 rounded text-xs ${getStatusBadgeClass(deal.status)}`}>
+                            {getStatusLabel(deal)}
                           </span>
                         </p>
                       </div>
@@ -467,6 +485,9 @@ const CardholderDashboard = () => {
                           <p className="text-sm text-red-800 font-semibold">⏰ Deal Expired</p>
                           {deal.cancelReason && (
                             <p className="text-xs text-red-600 mt-1">Reason: {deal.cancelReason}</p>
+                          )}
+                          {deal.escrowStatus === 'refunded' && (
+                            <p className="text-xs text-red-600 mt-1">Any payment hold has been refunded.</p>
                           )}
                         </div>
                       )}

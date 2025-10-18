@@ -921,7 +921,7 @@ router.post('/cancel-deal', verifyToken, async (req, res) => {
 
     // Notify the other party
     const notifyUserId = isBuyer ? deal.cardholderId : deal.buyerId;
-    const notifyRole = isBuyer ? 'cardholder' : 'buyer';
+    const cancellingParty = isBuyer ? 'buyer' : 'cardholder';
     
     if (notifyUserId) {
       io.to(`user_${notifyUserId}`).emit('dealCancelled', {
@@ -933,8 +933,51 @@ router.post('/cancel-deal', verifyToken, async (req, res) => {
     }
 
     // Broadcast to both rooms
-    io.to('buyers').emit('dealCancelled', { dealId, message: 'Deal cancelled' });
-    io.to('cardholders').emit('dealCancelled', { dealId, message: 'Deal cancelled' });
+    const broadcastPayload = {
+      dealId,
+      cancelledBy: deal.cancelledBy,
+      reason: deal.cancelReason,
+      message: `Deal cancelled by ${deal.cancelledBy}`
+    };
+    io.to('buyers').emit('dealCancelled', broadcastPayload);
+    io.to('cardholders').emit('dealCancelled', broadcastPayload);
+
+    // Send FCM push notifications if available
+    try {
+      await deal.populate([
+        { path: 'buyerId', select: 'fcmToken name' },
+        { path: 'cardholderId', select: 'fcmToken name' }
+      ]);
+
+      const notifications = [];
+
+      const title = 'Deal Cancelled';
+      const body = `Deal ${deal._id} was cancelled by ${deal.cancelledBy}.`;
+
+      if (deal.buyerId?.fcmToken) {
+        notifications.push({ token: deal.buyerId.fcmToken });
+      }
+
+      if (deal.cardholderId?.fcmToken) {
+        notifications.push({ token: deal.cardholderId.fcmToken });
+      }
+
+      for (const notify of notifications) {
+        if (!notify.token || typeof admin?.messaging !== 'function') continue;
+        await admin.messaging().send({
+          token: notify.token,
+          notification: { title, body },
+          data: {
+            dealId: deal._id.toString(),
+            action: 'deal_cancelled',
+            cancelledBy: deal.cancelledBy,
+            reason: deal.cancelReason || ''
+          }
+        });
+      }
+    } catch (fcmError) {
+      console.warn('⚠️ Failed to send deal cancellation FCM:', fcmError.message || fcmError);
+    }
 
     res.status(200).json({
       success: true,
