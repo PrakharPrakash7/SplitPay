@@ -16,11 +16,11 @@ const DealSchema = new mongoose.Schema({
   discountPct: { type: Number, default: 10 },
   discountedPrice: Number,
   
-  // Dynamic Discount Breakdown (70-20-10 split)
+  // Dynamic Discount Breakdown (80-15-5 split)
   totalBankDiscount: { type: Number, default: 0 },      // Total discount offered by bank
-  buyerDiscount: { type: Number, default: 0 },          // 70% of bank discount goes to buyer
-  cardholderCommission: { type: Number, default: 0 },   // 20% of bank discount goes to cardholder
-  platformFee: { type: Number, default: 0 },            // 10% of bank discount goes to platform
+  buyerDiscount: { type: Number, default: 0 },          // 80% of bank discount goes to buyer
+  cardholderCommission: { type: Number, default: 0 },   // 15% of bank discount goes to cardholder
+  platformFee: { type: Number, default: 0 },            // 5% of bank discount goes to platform
   
   status: { 
     type: String, 

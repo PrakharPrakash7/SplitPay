@@ -4,6 +4,7 @@ import { createDeal, acceptDeal, getAllDeals } from "../controllers/dealsControl
 import { verifyToken } from "../middleware/authMiddleware.js";
 import Deal from "../models/Deal.js";
 import { uploadInvoice } from "../utils/uploadConfig.js";
+import cloudinary from "../utils/cloudinaryConfig.js";
 
 const router = express.Router();
 
@@ -106,8 +107,37 @@ router.post("/:id/upload-invoice", verifyToken, uploadInvoice.single('invoice'),
       return res.status(403).json({ error: "Only the cardholder can upload invoice" });
     }
 
-    // Save the invoice file URL
-    const invoiceUrl = `/uploads/invoices/${req.file.filename}`;
+    let invoiceUrl;
+
+    // Check if Cloudinary is configured
+    const useCloudinary = process.env.CLOUDINARY_CLOUD_NAME && 
+                          process.env.CLOUDINARY_API_KEY && 
+                          process.env.CLOUDINARY_API_SECRET;
+
+    if (useCloudinary) {
+      // Upload to Cloudinary
+      console.log('☁️ Uploading to Cloudinary...');
+      
+      // Convert buffer to base64
+      const b64 = Buffer.from(req.file.buffer).toString('base64');
+      const dataURI = `data:${req.file.mimetype};base64,${b64}`;
+      
+      const result = await cloudinary.uploader.upload(dataURI, {
+        resource_type: 'raw',
+        folder: 'splitpay/invoices',
+        public_id: `invoice-${dealId}-${Date.now()}`,
+        format: 'pdf'
+      });
+      
+      invoiceUrl = result.secure_url;
+      console.log(`✅ Uploaded to Cloudinary: ${invoiceUrl}`);
+    } else {
+      // Use local storage
+      invoiceUrl = `/uploads/invoices/${req.file.filename}`;
+      console.log(`✅ Saved locally: ${invoiceUrl}`);
+    }
+
+    // Save the invoice URL to deal
     deal.invoiceUrl = invoiceUrl;
     await deal.save();
 
@@ -131,7 +161,7 @@ router.post("/:id/upload-invoice", verifyToken, uploadInvoice.single('invoice'),
 
   } catch (error) {
     console.error("❌ Error uploading invoice:", error);
-    res.status(500).json({ error: "Failed to upload invoice" });
+    res.status(500).json({ error: "Failed to upload invoice", details: error.message });
   }
 });
 

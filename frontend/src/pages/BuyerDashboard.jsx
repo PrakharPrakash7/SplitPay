@@ -3,6 +3,7 @@ import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import AddressForm from '../components/AddressForm';
+import DealFlowModal from '../components/DealFlowModal';
 import { API_BASE_URL } from '../utils/api';
 
 const BuyerDashboard = () => {
@@ -15,6 +16,8 @@ const BuyerDashboard = () => {
   const [showAddressForm, setShowAddressForm] = useState(false);
   const [selectedDeal, setSelectedDeal] = useState(null);
   const [paymentModal, setPaymentModal] = useState({ show: false, deal: null });
+  const [showDealModal, setShowDealModal] = useState(false);
+  const [modalDeal, setModalDeal] = useState(null);
 
   // Update current time every second for live countdown
   useEffect(() => {
@@ -468,11 +471,8 @@ const BuyerDashboard = () => {
                         </p>
                         {deal.totalBankDiscount > 0 && (
                           <div className="text-xs text-gray-500 mt-2 border-t pt-2">
-                            <p className="font-semibold text-gray-700 mb-1">💳 Discount Breakdown:</p>
-                            <p>• Total Bank Discount: <span className="font-semibold">₹{deal.totalBankDiscount}</span></p>
-                            <p className="text-green-600">• Your Savings (70%): <span className="font-semibold">₹{deal.buyerDiscount}</span></p>
-                            <p className="text-blue-600">• Cardholder Commission (20%): <span className="font-semibold">₹{deal.cardholderCommission}</span></p>
-                            <p className="text-purple-600">• Platform Fee (10%): <span className="font-semibold">₹{deal.platformFee}</span></p>
+                            <p className="text-green-600">• Your Savings: <span className="font-semibold">₹{deal.buyerDiscount}</span></p>
+                            
                           </div>
                         )}
                         <p className="text-sm">
@@ -768,6 +768,23 @@ const BuyerDashboard = () => {
             console.log("❌ Address modal closed");
             setShowAddressForm(false);
             setSelectedDeal(null);
+          }}
+        />
+      )}
+
+      {/* Deal Flow Modal */}
+      {showDealModal && modalDeal && (
+        <DealFlowModal
+          deal={modalDeal}
+          userRole="buyer"
+          onClose={() => {
+            console.log("❌ Deal modal closed");
+            setShowDealModal(false);
+            setModalDeal(null);
+          }}
+          onSuccess={() => {
+            console.log("✅ Deal action completed");
+            fetchDeals(); // Refresh deals
           }}
         />
       )}

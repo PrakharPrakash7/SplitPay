@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { useNavigate } from "react-router-dom";
 import { io } from "socket.io-client";
-import OrderSubmissionForm from "../components/OrderSubmissionForm";
+import DealFlowModal from "../components/DealFlowModal";
 import { API_BASE_URL } from "../utils/api";
 
 const CardholderDashboard = () => {
@@ -10,9 +10,8 @@ const CardholderDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [accepting, setAccepting] = useState(null);
   const [currentTime, setCurrentTime] = useState(Date.now());
-  const [showOrderForm, setShowOrderForm] = useState(false);
+  const [showDealModal, setShowDealModal] = useState(false);
   const [selectedDeal, setSelectedDeal] = useState(null);
-  const [shippingAddress, setShippingAddress] = useState(null);
   const navigate = useNavigate();
 
   // Update current time every second for live countdown
@@ -328,17 +327,15 @@ const CardholderDashboard = () => {
                       </h3>
                       <div className="space-y-2 text-sm">
                         <p><span className="font-semibold">Price:</span> ₹{deal.product?.price || 0}</p>
-                        <p><span className="font-semibold">Discount:</span> {deal.discountPercentage}%</p>
-                        
+                       
                         {deal.totalBankDiscount > 0 ? (
                           <div className="border-t pt-2 mt-2">
                             <p className="font-semibold text-blue-600 mb-1">
-                              💰 Your Commission (20%): ₹{deal.cardholderCommission}
+                              💰 Your Commission: ₹{deal.cardholderCommission}
                             </p>
                             <div className="text-xs text-gray-500 space-y-0.5">
                               <p>• Total Bank Discount: ₹{deal.totalBankDiscount}</p>
-                              <p className="text-green-600">• Buyer gets (70%): ₹{deal.buyerDiscount}</p>
-                              <p className="text-purple-600">• Platform (10%): ₹{deal.platformFee}</p>
+                             
                             </div>
                           </div>
                         ) : (
@@ -428,9 +425,8 @@ const CardholderDashboard = () => {
                             onClick={() => {
                               console.log("🖱️ Place Order button clicked for deal:", deal._id);
                               setSelectedDeal(deal);
-                              setShippingAddress(deal.shippingDetails);
-                              setShowOrderForm(true);
-                              console.log("✅ Order form modal opened manually");
+                              setShowDealModal(true);
+                              console.log("✅ Deal flow modal opened");
                             }}
                             className="w-full bg-purple-600 text-white py-2 px-4 rounded hover:bg-purple-700"
                           >
@@ -483,6 +479,19 @@ const CardholderDashboard = () => {
                           </p>
                         </div>
                       )}
+
+                      {/* View Details button for all deals */}
+                      {!['pending', 'expired'].includes(deal.status) && (
+                        <button
+                          onClick={() => {
+                            setSelectedDeal(deal);
+                            setShowDealModal(true);
+                          }}
+                          className="mt-3 w-full bg-gray-100 text-gray-700 py-2 px-4 rounded hover:bg-gray-200 text-sm border border-gray-300"
+                        >
+                          📋 View Full Details
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
@@ -492,18 +501,19 @@ const CardholderDashboard = () => {
         </div>
       </div>
 
-      {/* Order Submission Form Modal */}
-      {console.log("🔍 Order Form render check - showOrderForm:", showOrderForm, "selectedDeal:", selectedDeal?._id, "hasAddress:", !!shippingAddress)}
-      {showOrderForm && selectedDeal && shippingAddress && (
-        <OrderSubmissionForm
-          dealId={selectedDeal._id}
-          product={selectedDeal.product}
-          shippingAddress={shippingAddress}
+      {/* Deal Flow Modal */}
+      {showDealModal && selectedDeal && (
+        <DealFlowModal
+          deal={selectedDeal}
+          userRole="cardholder"
           onClose={() => {
-            console.log("❌ Order form closed");
-            setShowOrderForm(false);
+            console.log("❌ Deal modal closed");
+            setShowDealModal(false);
             setSelectedDeal(null);
-            setShippingAddress(null);
+          }}
+          onSuccess={() => {
+            console.log("✅ Order submitted successfully");
+            fetchDeals(); // Refresh deals
           }}
         />
       )}

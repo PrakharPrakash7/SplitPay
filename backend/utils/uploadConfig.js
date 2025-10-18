@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Configure storage
+// Configure storage for LOCAL storage (fallback if Cloudinary not configured)
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     // Store invoices in uploads/invoices folder
@@ -19,6 +19,9 @@ const storage = multer.diskStorage({
   }
 });
 
+// Configure storage for MEMORY (for Cloudinary upload)
+const memoryStorage = multer.memoryStorage();
+
 // File filter to accept only PDF files
 const fileFilter = (req, file, cb) => {
   if (file.mimetype === 'application/pdf') {
@@ -28,11 +31,18 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
+// Choose storage based on whether Cloudinary is configured
+const useCloudinary = process.env.CLOUDINARY_CLOUD_NAME && 
+                      process.env.CLOUDINARY_API_KEY && 
+                      process.env.CLOUDINARY_API_SECRET;
+
 // Multer upload instance
 export const uploadInvoice = multer({
-  storage: storage,
+  storage: useCloudinary ? memoryStorage : storage,
   fileFilter: fileFilter,
   limits: {
     fileSize: 5 * 1024 * 1024 // 5MB max file size
   }
 });
+
+console.log(`📁 File upload configured: ${useCloudinary ? 'Cloudinary (cloud)' : 'Local storage'}`);

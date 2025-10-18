@@ -40,10 +40,10 @@ export const createDeal = async (req, res) => {
       }
     }
     
-    // Calculate dynamic discount split (70-20-10)
-    const buyerDiscount = Math.round(totalBankDiscount * 0.70);        // 70% to buyer
-    const cardholderCommission = Math.round(totalBankDiscount * 0.20); // 20% to cardholder
-    const platformFee = Math.round(totalBankDiscount * 0.10);          // 10% to platform
+    // Calculate dynamic discount split (80-15-5)
+    const buyerDiscount = Math.round(totalBankDiscount * 0.80);        // 80% to buyer
+    const cardholderCommission = Math.round(totalBankDiscount * 0.15); // 15% to cardholder
+    const platformFee = Math.round(totalBankDiscount * 0.05);          // 5% to platform
     
     // Final price after buyer discount
     const discountedPrice = finalPrice - buyerDiscount;
