@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
+import { getAuthToken } from '../utils/authHelper';
 
 const BuyerProfile = () => {
   const navigate = useNavigate();
@@ -25,7 +26,7 @@ const BuyerProfile = () => {
 
   const fetchProfile = async () => {
     try {
-      const token = localStorage.getItem('token');
+      const token = getAuthToken('buyer');
       const res = await fetch('http://localhost:5000/api/users/profile', {
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -69,7 +70,7 @@ const BuyerProfile = () => {
 
     setLoading(true);
     try {
-      const token = localStorage.getItem('token');
+      const token = getAuthToken('buyer');
       const res = await fetch('http://localhost:5000/api/users/profile', {
         method: 'PUT',
         headers: {

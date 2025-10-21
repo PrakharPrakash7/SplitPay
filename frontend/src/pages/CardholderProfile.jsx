@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
+import { getAuthToken } from '../utils/authHelper';
 
 const CardholderProfile = () => {
   const navigate = useNavigate();
@@ -21,7 +22,7 @@ const CardholderProfile = () => {
 
   const fetchProfile = async () => {
     try {
-      const token = localStorage.getItem('token');
+      const token = getAuthToken('cardholder');
       const res = await fetch('http://localhost:5000/api/users/profile', {
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -73,7 +74,7 @@ const CardholderProfile = () => {
 
     setLoading(true);
     try {
-      const token = localStorage.getItem('token');
+      const token = getAuthToken('cardholder');
       const payoutData = {
         accountType,
         ...(accountType === 'upi' 

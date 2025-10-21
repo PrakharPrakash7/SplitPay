@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
+import { getAuthToken, clearAuth } from "../utils/authHelper";
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
@@ -16,15 +17,14 @@ const AdminDashboard = () => {
   });
 
   const handleLogout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("role");
+    clearAuth('admin');
     navigate("/admin");
   };
 
   // Fetch all deals
   const fetchDeals = async () => {
     try {
-      const token = localStorage.getItem("token");
+      const token = getAuthToken('admin');
       const response = await fetch("http://localhost:5000/api/admin/deals", {
         headers: {
           Authorization: `Bearer ${token}`
@@ -62,7 +62,7 @@ const AdminDashboard = () => {
 
     setProcessing(dealId);
     try {
-      const token = localStorage.getItem("token");
+      const token = getAuthToken('admin');
       const response = await fetch("http://localhost:5000/api/payment/admin/mark-shipped", {
         method: "POST",
         headers: {

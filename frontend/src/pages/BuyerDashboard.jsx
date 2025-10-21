@@ -362,61 +362,165 @@ const BuyerDashboard = () => {
     });
 
     // Listen for deal accepted
-    socket.on("dealAcceptedByCardholder", ({ dealId, cardholder, message }) => {
+    socket.on("dealAcceptedByCardholder", async ({ dealId, cardholder, message }) => {
       console.log("🎉 Deal accepted by cardholder:", dealId);
       toast.success(message || "🎉 A cardholder accepted your deal!");
-      fetchDeals();
+      await fetchDeals();
+      
+      // Update modal if it's open for this deal
+      if (showDealModal && modalDeal?._id === dealId) {
+        const token = getAuthToken('buyer');
+        const response = await fetch(`${API_BASE_URL}/api/deals`, {
+          headers: {'Authorization': `Bearer ${token}`}
+        });
+        if (response.ok) {
+          const data = await response.json();
+          const updatedDeal = data.deals?.find(d => d._id === dealId);
+          if (updatedDeal) setModalDeal(updatedDeal);
+        }
+      }
     });
 
     // Listen for payment authorized
-    socket.on("paymentAuthorized", ({ dealId, message }) => {
+    socket.on("paymentAuthorized", async ({ dealId, message }) => {
       console.log("💰 Payment authorized:", dealId);
       toast.success(message || "💰 Payment authorized successfully!");
-      fetchDeals();
+      await fetchDeals();
+      
+      // Update modal if it's open for this deal
+      if (showDealModal && modalDeal?._id === dealId) {
+        const token = getAuthToken('buyer');
+        const response = await fetch(`${API_BASE_URL}/api/deals`, {
+          headers: {'Authorization': `Bearer ${token}`}
+        });
+        if (response.ok) {
+          const data = await response.json();
+          const updatedDeal = data.deals?.find(d => d._id === dealId);
+          if (updatedDeal) setModalDeal(updatedDeal);
+        }
+      }
     });
 
     // Listen for order submitted by cardholder
-    socket.on("orderSubmitted", ({ dealId, orderId, trackingUrl, invoiceUrl, message }) => {
+    socket.on("orderSubmitted", async ({ dealId, orderId, trackingUrl, invoiceUrl, message }) => {
       console.log("📦 Order submitted:", dealId, orderId);
       console.log("🔗 Tracking URL:", trackingUrl);
       console.log("📄 Invoice URL:", invoiceUrl);
       toast.success(message || "📦 Cardholder placed the order!");
-      fetchDeals(); // Auto-refresh to show tracking and invoice links
+      await fetchDeals(); // Auto-refresh to show tracking and invoice links
+      
+      // Update modal if it's open for this deal, then close it
+      if (showDealModal && modalDeal?._id === dealId) {
+        const token = getAuthToken('buyer');
+        const response = await fetch(`${API_BASE_URL}/api/deals`, {
+          headers: {'Authorization': `Bearer ${token}`}
+        });
+        if (response.ok) {
+          const data = await response.json();
+          const updatedDeal = data.deals?.find(d => d._id === dealId);
+          if (updatedDeal) {
+            setModalDeal(updatedDeal);
+            // Close modal after showing order placed status
+            setTimeout(() => {
+              setShowDealModal(false);
+              setModalDeal(null);
+            }, 2000);
+          }
+        }
+      }
     });
 
     // Listen for order shipped
-    socket.on("orderShipped", ({ dealId, message }) => {
+    socket.on("orderShipped", async ({ dealId, message }) => {
       console.log("🚚 Order shipped:", dealId);
       toast.success(message || "🚚 Order has been shipped!");
-      fetchDeals();
+      await fetchDeals();
+      
+      // Update modal if it's open for this deal
+      if (showDealModal && modalDeal?._id === dealId) {
+        const token = getAuthToken('buyer');
+        const response = await fetch(`${API_BASE_URL}/api/deals`, {
+          headers: {'Authorization': `Bearer ${token}`}
+        });
+        if (response.ok) {
+          const data = await response.json();
+          const updatedDeal = data.deals?.find(d => d._id === dealId);
+          if (updatedDeal) setModalDeal(updatedDeal);
+        }
+      }
     });
 
     // Listen for payment captured
-    socket.on("paymentCaptured", ({ dealId, message }) => {
+    socket.on("paymentCaptured", async ({ dealId, message }) => {
       console.log("✅ Payment captured:", dealId);
       toast.success(message || "✅ Payment has been processed!");
-      fetchDeals();
+      await fetchDeals();
+      
+      // Update modal if it's open for this deal
+      if (showDealModal && modalDeal?._id === dealId) {
+        const token = getAuthToken('buyer');
+        const response = await fetch(`${API_BASE_URL}/api/deals`, {
+          headers: {'Authorization': `Bearer ${token}`}
+        });
+        if (response.ok) {
+          const data = await response.json();
+          const updatedDeal = data.deals?.find(d => d._id === dealId);
+          if (updatedDeal) setModalDeal(updatedDeal);
+        }
+      }
     });
 
     // Listen for deal expired
-    socket.on("dealExpired", ({ dealId, message }) => {
+    socket.on("dealExpired", async ({ dealId, message }) => {
       console.log("⏰ Deal expired:", dealId);
       toast.error(message || "⏰ Deal expired");
-      fetchDeals();
+      await fetchDeals();
+      
+      // Close modal if it's open for this deal
+      if (showDealModal && modalDeal?._id === dealId) {
+        toast.info("Closing expired deal...");
+        setTimeout(() => {
+          setShowDealModal(false);
+          setModalDeal(null);
+          setAutoOpenedDealId(null);
+        }, 2000);
+      }
     });
 
     // Listen for deal cancelled
-    socket.on("dealCancelled", ({ dealId, cancelledBy, message }) => {
+    socket.on("dealCancelled", async ({ dealId, cancelledBy, message }) => {
       console.log("❌ Deal cancelled:", dealId, "by", cancelledBy);
       toast.info(message || "Deal cancelled");
-      fetchDeals();
+      await fetchDeals();
+      
+      // Close modal if it's open for this deal
+      if (showDealModal && modalDeal?._id === dealId) {
+        setTimeout(() => {
+          setShowDealModal(false);
+          setModalDeal(null);
+          setAutoOpenedDealId(null);
+        }, 2000);
+      }
     });
 
     // Listen for deal completed
-    socket.on("dealCompleted", ({ dealId, message }) => {
+    socket.on("dealCompleted", async ({ dealId, message }) => {
       console.log("✅ Deal completed:", dealId);
       toast.success(message || "✅ Deal completed!");
-      fetchDeals();
+      await fetchDeals();
+      
+      // Update modal if it's open for this deal
+      if (showDealModal && modalDeal?._id === dealId) {
+        const token = getAuthToken('buyer');
+        const response = await fetch(`${API_BASE_URL}/api/deals`, {
+          headers: {'Authorization': `Bearer ${token}`}
+        });
+        if (response.ok) {
+          const data = await response.json();
+          const updatedDeal = data.deals?.find(d => d._id === dealId);
+          if (updatedDeal) setModalDeal(updatedDeal);
+        }
+      }
     });
 
     // Fetch initial deals
@@ -928,7 +1032,7 @@ const BuyerDashboard = () => {
               setAutoOpenedDealId(createdDeal._id);
             } else if (modalDeal) {
               // Check updated status of current deal
-              const token = localStorage.getItem('token');
+              const token = getAuthToken('buyer');
               const response = await fetch(`${API_BASE_URL}/api/deals`, {
                 headers: {'Authorization': `Bearer ${token}`}
               });
@@ -937,17 +1041,19 @@ const BuyerDashboard = () => {
                 const data = await response.json();
                 const updatedDeal = data.deals?.find(d => d._id === modalDeal._id);
                 
-                // Close modal only if deal reached a final state
-                if (updatedDeal && ['completed', 'cancelled', 'expired', 'refunded', 'failed'].includes(updatedDeal.status)) {
-                  console.log("🏁 Deal completed, closing modal");
-                  setTimeout(() => {
-                    setShowDealModal(false);
-                    setModalDeal(null);
-                    setAutoOpenedDealId(null);
-                  }, 2000); // Small delay to show completion screen
-                } else if (updatedDeal) {
-                  // Update with latest deal data
+                if (updatedDeal) {
+                  // Always update modal with latest data
                   setModalDeal(updatedDeal);
+                  
+                  // Close modal only for order_placed, cancelled, or expired
+                  if (['order_placed', 'cancelled', 'expired', 'refunded', 'failed'].includes(updatedDeal.status)) {
+                    console.log("🏁 Deal reached final state, closing modal");
+                    setTimeout(() => {
+                      setShowDealModal(false);
+                      setModalDeal(null);
+                      setAutoOpenedDealId(null);
+                    }, 2000); // Small delay to show final screen
+                  }
                 }
               }
             }
