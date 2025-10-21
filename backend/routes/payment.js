@@ -47,7 +47,8 @@ router.post('/create-order', verifyToken, async (req, res) => {
       });
     }
 
-    if (deal.status !== 'matched') {
+    // Allow order creation for matched (first-time) or awaiting_payment (retry)
+    if (deal.status !== 'matched' && deal.status !== 'awaiting_payment') {
       return res.status(400).json({ error: `Cannot create order for deal with status: ${deal.status}` });
     }
 
@@ -883,8 +884,11 @@ router.post('/cancel-deal', verifyToken, async (req, res) => {
     // Check authorization
     const isBuyer = deal.buyerId.toString() === userId.toString();
     const isCardholder = deal.cardholderId && deal.cardholderId.toString() === userId.toString();
+    
+    // For pending deals, any cardholder can decline
+    const isPendingAndCardholder = deal.status === 'pending' && userRole === 'cardholder';
 
-    if (!isBuyer && !isCardholder) {
+    if (!isBuyer && !isCardholder && !isPendingAndCardholder) {
       return res.status(403).json({ error: 'Unauthorized to cancel this deal' });
     }
 
@@ -912,9 +916,9 @@ router.post('/cancel-deal', verifyToken, async (req, res) => {
 
     // Update deal status
   deal.status = 'cancelled';
-    deal.cancelledBy = isBuyer ? 'buyer' : 'cardholder';
+    deal.cancelledBy = isBuyer ? 'buyer' : (isPendingAndCardholder ? 'cardholder' : 'cardholder');
     deal.cancelledAt = new Date();
-    deal.cancelReason = reason || `Cancelled by ${isBuyer ? 'buyer' : 'cardholder'}`;
+    deal.cancelReason = reason || `Cancelled by ${deal.cancelledBy}`;
     await deal.save();
 
     console.log(`❌ Deal ${dealId} cancelled by ${deal.cancelledBy}`);

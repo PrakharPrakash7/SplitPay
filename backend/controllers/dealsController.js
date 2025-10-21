@@ -31,18 +31,26 @@ export const createDeal = async (req, res) => {
     // Extract bank discount from bank offers (if available)
     let totalBankDiscount = 0;
     if (product.bankOffers && product.bankOffers.length > 0) {
-      // Try to extract numerical discount from the first bank offer
-      const firstOffer = product.bankOffers[0];
-      // Look for patterns like "₹4000 discount", "4000 off", "Save ₹4000"
-      if (firstOffer.discount && typeof firstOffer.discount === 'string') {
-        const discountMatch = firstOffer.discount.match(/[₹\s]?([\d,]+)/);
-        if (discountMatch) {
-          totalBankDiscount = parseInt(discountMatch[1].replace(/,/g, ''));
+      // Find the maximum discount amount from all available bank offers
+      const discounts = product.bankOffers.map(offer => {
+        if (offer.discountAmount && typeof offer.discountAmount === 'number') {
+          return offer.discountAmount;
+        } else if (offer.discount && typeof offer.discount === 'number') {
+          return offer.discount;
+        } else if (offer.discount && typeof offer.discount === 'string') {
+          // Try to extract numerical discount from string
+          const discountMatch = offer.discount.match(/[₹\s]?([\d,]+)/);
+          if (discountMatch) {
+            return parseInt(discountMatch[1].replace(/,/g, ''));
+          }
         }
-      } else if (firstOffer.discountAmount && typeof firstOffer.discountAmount === 'number') {
-        totalBankDiscount = firstOffer.discountAmount;
-      } else if (firstOffer.discount && typeof firstOffer.discount === 'number') {
-        totalBankDiscount = firstOffer.discount;
+        return 0;
+      }).filter(amount => amount > 0);
+      
+      // Use the maximum discount available
+      if (discounts.length > 0) {
+        totalBankDiscount = Math.max(...discounts);
+        console.log(`💳 Found ${product.bankOffers.length} bank offers, using max discount: ₹${totalBankDiscount}`);
       }
     }
     

@@ -9,8 +9,13 @@ const DealSchema = new mongoose.Schema({
     url: String,
     bankOffers: [{
       bank: String,
-      offer: String,
-      discount: String
+      description: String,  // Full offer description
+      offer: String,        // Legacy field
+      discount: String,     // Legacy field - can be string or number
+      discountAmount: Number,
+      discountPercent: Number,
+      cardType: String,     // 'debit', 'credit', 'emi', 'prepaid', 'card'
+      source: String        // 'amazon', 'flipkart', etc.
     }]
   },
   discountPct: { type: Number, default: 10 },

@@ -9,6 +9,7 @@ import {
 } from "firebase/auth";
 import toast from "react-hot-toast";
 import { API_BASE_URL } from "../utils/api";
+import { saveAuth } from "../utils/authHelper";
 
 const BuyerLogin = () => {
   const [name, setName] = useState("");
@@ -25,9 +26,8 @@ const BuyerLogin = () => {
     const data = await res.json();
     
     if (data.token && data.user) {
-      localStorage.setItem("token", data.token);
-      localStorage.setItem("role", data.user.role || "buyer"); // Use role from backend
-      console.log("✅ Logged in as:", data.user.role);
+      saveAuth('buyer', data.token);
+      console.log("✅ Logged in as buyer");
     }
     
     return data;

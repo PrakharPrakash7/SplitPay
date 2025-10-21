@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../utils/api';
+import { getAuthToken } from '../utils/authHelper';
 
 const OrderSubmissionForm = ({ dealId, shippingAddress, product, onClose }) => {
   const [orderId, setOrderId] = useState('');
@@ -34,7 +35,7 @@ const OrderSubmissionForm = ({ dealId, shippingAddress, product, onClose }) => {
 
     setLoading(true);
     try {
-      const token = localStorage.getItem('token');
+      const token = getAuthToken('cardholder');
       
       // First, upload the invoice PDF
       const formData = new FormData();

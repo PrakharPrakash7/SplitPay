@@ -11,7 +11,7 @@ const fallback = {
   bankOffers: []
 };
 
-const SCRAPE_CACHE_VERSION = 8;
+const SCRAPE_CACHE_VERSION = 12;
 const PLATFORM_KEYWORDS = [
   "amazon",
   "flipkart",
@@ -23,7 +23,7 @@ const PLATFORM_KEYWORDS = [
   "reliance digital"
 ];
 
-const OFFER_SIGNAL_REGEX = /(bank|debit card|credit card|emi card|insta emi|insta emi card|card offer|card transaction|card payment|card emi|card discount|cashback|no cost emi|special price|extra.*off)/i;
+const OFFER_SIGNAL_REGEX = /(bank offer|debit card|credit card|cashback|discount on.*card|emi.*card|card.*discount|card.*cashback|instant discount)/i;
 
 function sanitizeTitle(rawTitle, fallbackTitle = "") {
   if (!rawTitle || typeof rawTitle !== "string") {
@@ -63,17 +63,22 @@ function detectCardType(offerText) {
 
   const normalized = offerText.toLowerCase();
 
+  // Check for EMI first (to filter out)
+  if (normalized.includes("no cost emi") || 
+      normalized.includes("no-cost emi") ||
+      normalized.includes("emi interest") ||
+      normalized.includes("emi transaction") ||
+      normalized.includes("convert into emi") ||
+      normalized.includes("insta emi card") ||
+      normalized.includes("emi card")) {
+    return "emi";
+  }
+
   if (normalized.includes("debit card")) {
     return "debit";
   }
   if (normalized.includes("credit card")) {
     return "credit";
-  }
-  if (normalized.includes("insta emi card")) {
-    return "emi";
-  }
-  if (normalized.includes("emi card")) {
-    return "emi";
   }
   if (normalized.includes("prepaid card")) {
     return "prepaid";
@@ -82,7 +87,6 @@ function detectCardType(offerText) {
     normalized.includes("card offer") ||
     normalized.includes("card transaction") ||
     normalized.includes("card payment") ||
-    normalized.includes("card emi") ||
     normalized.includes("card discount")
   ) {
     return "card";
@@ -113,7 +117,7 @@ function normalizeDescription(text, maxLength = 280) {
   let normalized = text.replace(/\s+/g, " ").trim();
   
   // Remove redundant "Bank Offer" prefix
-  normalized = normalized.replace(/^Bank Offer/i, "").trim();
+  //normalized = normalized.replace(/^Bank Offer/i, "").trim();
   
   return normalized.length > maxLength ? normalized.slice(0, maxLength).trim() : normalized;
 }
@@ -126,6 +130,35 @@ function processOfferText(rawText, banks, source, bankOffers) {
   const offerText = rawText.replace(/\s+/g, " ").trim();
   if (!offerText || !OFFER_SIGNAL_REGEX.test(offerText)) {
     return;
+  }
+
+  // Filter out invalid offer texts
+  // Skip if contains code artifacts, delivery info, or privacy text
+  const invalidPatterns = [
+    /function\s*\(/i,
+    /\.execute\(/i,
+    /\.find\(/i,
+    /\{.*\}/,  // JSON objects
+    /free delivery|fastest delivery/i,
+    /delivering to|update location/i,
+    /merchantId|asin/i,
+    /payment security system|don't share your credit card/i,
+    /cash on delivery|cod/i,
+    /double tap to read/i,
+    /brief content|full content/i,
+    /previous page|next page/i,
+    /learn more\s*$/i
+  ];
+
+  for (const pattern of invalidPatterns) {
+    if (pattern.test(offerText)) {
+      return; // Skip this offer
+    }
+  }
+
+  // Must contain specific discount/cashback amount or percentage
+  if (!/₹\s*[\d,]+|[\d]+\s*%/.test(offerText)) {
+    return; // No specific discount mentioned
   }
 
   const cardType = detectCardType(offerText);
@@ -424,11 +457,19 @@ export async function fetchProduct(url) {
     
     console.log(`Found ${bankOffers.length} bank and card offers before filtering`);
 
+    // Deduplicate offers by bank + discount amount + card type
     const offerMap = new Map();
     for (const offer of bankOffers) {
-      const key = `${offer.bank}|${offer.rawDescription || offer.description}`;
+      // Use bank + discountAmount + cardType as unique key (ignore description variations)
+      const key = `${offer.bank}|${offer.discountAmount || 'none'}|${offer.cardType || 'none'}`;
       if (!offerMap.has(key)) {
         offerMap.set(key, offer);
+      } else {
+        // Keep the one with longer description (more details)
+        const existing = offerMap.get(key);
+        if (offer.description.length > existing.description.length) {
+          offerMap.set(key, offer);
+        }
       }
     }
 
@@ -444,12 +485,46 @@ export async function fetchProduct(url) {
       })));
     }
 
-    // Don't filter by price cap anymore - offers may have minimum purchase requirements
-    // that make them valid even if discount exceeds product price
-    const filteredOffers = uniqueOffers;
+    // Filter offers based on requirements:
+    // 1. Exclude EMI offers (only debit/credit/card offers)
+    // 2. Only include if product price is sufficient for the discount OR if it's a percentage-based offer
+    const productPrice = price || fallback.price;
+    const filteredOffers = uniqueOffers.filter(offer => {
+      // Filter out EMI offers - only keep debit, credit, prepaid, and general card offers
+      if (offer.cardType === 'emi') {
+        console.log(`❌ Filtered out EMI offer: ${offer.description}`);
+        return false;
+      }
+
+      // If offer has a discount amount, check if product price is sufficient
+      if (offer.discountAmount !== null && offer.discountAmount > 0) {
+        // Check if there's a minimum purchase requirement in the description
+        const minPurchaseMatch = offer.description.match(/(?:min|minimum).*?(?:purchase|booking|amount|transaction|cart).*?₹\s*([\d,]+)/i);
+        
+        if (minPurchaseMatch) {
+          // Has minimum purchase requirement
+          const minPurchase = parseFloat(minPurchaseMatch[1].replace(/,/g, ''));
+          if (productPrice < minPurchase) {
+            console.log(`❌ Product price ₹${productPrice} below minimum ₹${minPurchase}: ${offer.description}`);
+            return false;
+          }
+        } else {
+          // No minimum mentioned - product price should be at least the discount amount
+          if (productPrice < offer.discountAmount) {
+            console.log(`❌ Product price ₹${productPrice} below discount ₹${offer.discountAmount}: ${offer.description}`);
+            return false;
+          }
+        }
+      }
+
+      // Percentage-based offers are always valid (they scale with price)
+      // Card offers without specific amounts are also included
+      console.log(`✅ Valid offer: ${offer.description}`);
+      return true;
+    });
 
     console.log(
-      `Bank offers collected: ${filteredOffers.length}`
+      `Bank offers: ${bankOffers.length} found → ${uniqueOffers.length} unique → ${filteredOffers.length} eligible (price: ₹${productPrice})`
     );
     
     const product = { 

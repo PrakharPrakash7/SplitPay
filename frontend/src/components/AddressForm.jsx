@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../utils/api';
+import { getAuthToken } from '../utils/authHelper';
 
 const AddressForm = ({ dealId, onSuccess, onClose }) => {
   const [formData, setFormData] = useState({
@@ -42,7 +43,7 @@ const AddressForm = ({ dealId, onSuccess, onClose }) => {
 
     setLoading(true);
     try {
-      const token = localStorage.getItem('token');
+      const token = getAuthToken('buyer');
       
       // Map formData field names to backend expected format
       const shippingDetails = {

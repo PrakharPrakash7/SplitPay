@@ -2,6 +2,7 @@ import { useState } from "react";
 import toast from "react-hot-toast";
 import { useNavigate } from "react-router-dom";
 import { API_BASE_URL } from "../utils/api";
+import { saveAuth } from "../utils/authHelper";
 
 const CardholderLogin = () => {
   const [name, setName] = useState("");
@@ -19,9 +20,8 @@ const CardholderLogin = () => {
       const data = await res.json();
       if(res.ok){
         toast.success(`Cardholder signed up: ${data.user.name}`);
-        localStorage.setItem("token", data.token);
-        localStorage.setItem("role", data.user.role || "cardholder"); // Use role from backend
-        console.log("✅ Logged in as:", data.user.role);
+        saveAuth('cardholder', data.token);
+        console.log("✅ Logged in as cardholder");
         navigate("/cardholder-dashboard");
       } else {
         toast.error(data.message);
@@ -41,9 +41,8 @@ const CardholderLogin = () => {
       const data = await res.json();
       if(res.ok){
         toast.success(`Cardholder logged in: ${data.user.name}`);
-        localStorage.setItem("token", data.token);
-        localStorage.setItem("role", data.user.role || "cardholder"); // Use role from backend
-        console.log("✅ Logged in as:", data.user.role);
+        saveAuth('cardholder', data.token);
+        console.log("✅ Logged in as cardholder");
         navigate("/cardholder-dashboard");
         
       } else {

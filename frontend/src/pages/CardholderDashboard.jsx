@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { io } from "socket.io-client";
 import DealFlowModal from "../components/DealFlowModal";
 import { API_BASE_URL } from "../utils/api";
+import { getAuthToken, clearAuth } from "../utils/authHelper";
 
 const CardholderDashboard = () => {
   const [deals, setDeals] = useState([]);
@@ -12,6 +13,7 @@ const CardholderDashboard = () => {
   const [currentTime, setCurrentTime] = useState(Date.now());
   const [showDealModal, setShowDealModal] = useState(false);
   const [selectedDeal, setSelectedDeal] = useState(null);
+  const [autoOpenedDealId, setAutoOpenedDealId] = useState(null); // Track auto-opened deal
   const navigate = useNavigate();
 
   const getStatusLabel = (deal) => {
@@ -81,7 +83,7 @@ const CardholderDashboard = () => {
   // Fetch available deals
   const fetchDeals = async () => {
     try {
-      const token = localStorage.getItem("token");
+      const token = getAuthToken('cardholder');
       const response = await fetch(`${API_BASE_URL}/api/deals`, {
         headers: {
           Authorization: `Bearer ${token}`
@@ -106,6 +108,17 @@ const CardholderDashboard = () => {
         
         console.log(`📋 Showing ${activeDeals.length} active + ${historicalDeals.length} historical (statuses: ${inactiveStatuses.join(', ')})`);
         setDeals(filteredDeals);
+        
+        // Auto-open modal for deals that need cardholder action
+        const actionNeededStatuses = ['pending', 'address_shared'];
+        const dealNeedingAction = filteredDeals.find(d => actionNeededStatuses.includes(d.status));
+        
+        if (dealNeedingAction && dealNeedingAction._id !== autoOpenedDealId) {
+          console.log(`🚀 Auto-opening modal for deal ${dealNeedingAction._id} in status: ${dealNeedingAction.status}`);
+          setSelectedDeal(dealNeedingAction);
+          setShowDealModal(true);
+          setAutoOpenedDealId(dealNeedingAction._id);
+        }
       } else {
         console.error("Failed to fetch deals:", response.status);
         toast.error("Failed to load deals");
@@ -124,7 +137,7 @@ const CardholderDashboard = () => {
     setAccepting(dealId);
     
     try {
-      const token = localStorage.getItem("token");
+      const token = getAuthToken('cardholder');
       const response = await fetch(`${API_BASE_URL}/api/deals/${dealId}/accept`, {
         method: "POST",
         headers: {
@@ -175,7 +188,7 @@ const CardholderDashboard = () => {
         } else {
           toast.success('✅ Deal cancelled successfully');
         }
-        fetchDeals();
+        await fetchDeals(); // Wait for deals to refresh
       } else {
         toast.error(data.error || 'Failed to cancel deal');
       }
@@ -384,6 +397,11 @@ const CardholderDashboard = () => {
                             ⏰ Buyer must pay within: <span className="font-semibold">{getTimeRemaining(deal.paymentExpiresAt)}</span>
                           </p>
                         )}
+                        {deal.status === 'awaiting_payment' && deal.paymentExpiresAt && (
+                          <p className="text-sm text-orange-600">
+                            ⏰ Buyer must complete payment within: <span className="font-semibold">{getTimeRemaining(deal.paymentExpiresAt)}</span>
+                          </p>
+                        )}
                         {deal.status === 'payment_authorized' && deal.addressExpiresAt && (
                           <p className="text-sm text-orange-600">
                             ⏰ Buyer must share address within: <span className="font-semibold">{getTimeRemaining(deal.addressExpiresAt)}</span>
@@ -402,13 +420,21 @@ const CardholderDashboard = () => {
                       </div>
                       
                       {deal.status === 'pending' && !isExpired && (
-                        <button
-                          onClick={() => acceptDeal(deal._id)}
-                          disabled={accepting === deal._id}
-                          className="mt-4 w-full bg-green-600 text-white py-2 rounded hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
-                        >
-                          {accepting === deal._id ? '⏳ Accepting...' : '✅ Accept Deal'}
-                        </button>
+                        <div className="mt-4 space-y-2">
+                          <button
+                            onClick={() => acceptDeal(deal._id)}
+                            disabled={accepting === deal._id}
+                            className="w-full bg-green-600 text-white py-2 rounded hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                          >
+                            {accepting === deal._id ? '⏳ Accepting...' : '✅ Accept Deal'}
+                          </button>
+                          <button
+                            onClick={() => cancelDeal(deal._id, 'Cancelled by cardholder - deal not accepted')}
+                            className="w-full bg-red-500 text-white py-2 px-4 rounded hover:bg-red-600 transition text-sm"
+                          >
+                            ❌ Decline Deal
+                          </button>
+                        </div>
                       )}
                       
                       {deal.status === 'matched' && (
@@ -532,18 +558,6 @@ const CardholderDashboard = () => {
                         </div>
                       )}
 
-                      {/* View Details button for all deals */}
-                      {!['pending', 'expired'].includes(deal.status) && (
-                        <button
-                          onClick={() => {
-                            setSelectedDeal(deal);
-                            setShowDealModal(true);
-                          }}
-                          className="mt-3 w-full bg-gray-100 text-gray-700 py-2 px-4 rounded hover:bg-gray-200 text-sm border border-gray-300"
-                        >
-                          📋 View Full Details
-                        </button>
-                      )}
                     </div>
                   </div>
                 );
@@ -563,9 +577,35 @@ const CardholderDashboard = () => {
             setShowDealModal(false);
             setSelectedDeal(null);
           }}
-          onSuccess={() => {
-            console.log("✅ Order submitted successfully");
-            fetchDeals(); // Refresh deals
+          onSuccess={async () => {
+            console.log("✅ Deal action completed");
+            
+            // Refresh deals
+            await fetchDeals();
+            
+            // Check if current deal reached a final state
+            const token = localStorage.getItem('token');
+            const response = await fetch(`${API_BASE_URL}/api/deals`, {
+              headers: {'Authorization': `Bearer ${token}`}
+            });
+            
+            if (response.ok) {
+              const data = await response.json();
+              const updatedDeal = data.deals?.find(d => d._id === selectedDeal._id);
+              
+              // Close modal only if deal completed or in final state
+              if (updatedDeal && ['completed', 'cancelled', 'expired', 'refunded', 'failed'].includes(updatedDeal.status)) {
+                console.log("🏁 Deal completed, closing modal");
+                setTimeout(() => {
+                  setShowDealModal(false);
+                  setSelectedDeal(null);
+                  setAutoOpenedDealId(null);
+                }, 2000); // Small delay to show completion screen
+              } else if (updatedDeal) {
+                // Update with latest deal data
+                setSelectedDeal(updatedDeal);
+              }
+            }
           }}
         />
       )}

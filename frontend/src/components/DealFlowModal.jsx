@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../utils/api';
+import { getAuthToken } from '../utils/authHelper';
 
 const DealFlowModal = ({ deal, onClose, onSuccess, userRole, mode = 'view' }) => {
   // State for creating new deal (Buyer)
@@ -28,6 +29,9 @@ const DealFlowModal = ({ deal, onClose, onSuccess, userRole, mode = 'view' }) =>
   const [trackingUrl, setTrackingUrl] = useState('');
   const [invoiceFile, setInvoiceFile] = useState(null);
   const [submittingOrder, setSubmittingOrder] = useState(false);
+  
+  // State for cancellation
+  const [cancelling, setCancelling] = useState(false);
 
   // Determine current step based on deal status and user role
   function getCurrentStep() {
@@ -70,11 +74,11 @@ const DealFlowModal = ({ deal, onClose, onSuccess, userRole, mode = 'view' }) =>
 
     setCreatingDeal(true);
     try {
-      const token = localStorage.getItem('token');
+      const token = getAuthToken(userRole);
       
       if (!token) {
         toast.error('❌ Authentication required. Please login again.');
-        console.error('No token found in localStorage');
+        console.error('No token found for role:', userRole);
         return;
       }
 
@@ -111,7 +115,7 @@ const DealFlowModal = ({ deal, onClose, onSuccess, userRole, mode = 'view' }) =>
   // Handler: Accept Deal (Cardholder)
   const handleAcceptDeal = async () => {
     try {
-      const token = localStorage.getItem('token');
+      const token = getAuthToken(userRole);
       const response = await fetch(`${API_BASE_URL}/api/deals/${deal._id}/accept`, {
         method: 'POST',
         headers: {
@@ -137,7 +141,7 @@ const DealFlowModal = ({ deal, onClose, onSuccess, userRole, mode = 'view' }) =>
   const handleInitiatePayment = async () => {
     setProcessingPayment(true);
     try {
-      const token = localStorage.getItem('token');
+      const token = getAuthToken(userRole);
       
       // Create Razorpay order
       const response = await fetch(`${API_BASE_URL}/api/payment/create-order`, {
@@ -231,7 +235,7 @@ const DealFlowModal = ({ deal, onClose, onSuccess, userRole, mode = 'view' }) =>
 
     setSubmittingAddress(true);
     try {
-      const token = localStorage.getItem('token');
+      const token = getAuthToken(userRole);
       const response = await fetch(`${API_BASE_URL}/api/payment/share-address`, {
         method: 'POST',
         headers: {
@@ -284,7 +288,7 @@ const DealFlowModal = ({ deal, onClose, onSuccess, userRole, mode = 'view' }) =>
 
     setSubmittingOrder(true);
     try {
-      const token = localStorage.getItem('token');
+      const token = getAuthToken(userRole);
       
       // First, upload the invoice PDF
       const formData = new FormData();
@@ -342,7 +346,7 @@ const DealFlowModal = ({ deal, onClose, onSuccess, userRole, mode = 'view' }) =>
   // Handler: Mark as Received (Buyer)
   const handleMarkReceived = async () => {
     try {
-      const token = localStorage.getItem('token');
+      const token = getAuthToken(userRole);
       const response = await fetch(`${API_BASE_URL}/api/deals/${deal._id}/mark-received`, {
         method: 'POST',
         headers: {
@@ -362,6 +366,44 @@ const DealFlowModal = ({ deal, onClose, onSuccess, userRole, mode = 'view' }) =>
     } catch (error) {
       console.error('Error marking as received:', error);
       toast.error('Unable to mark as received');
+    }
+  };
+
+  // Handler: Cancel Deal
+  const handleCancelDeal = async (reason) => {
+    if (!confirm('Are you sure you want to cancel this deal? This action cannot be undone.')) {
+      return;
+    }
+
+    setCancelling(true);
+    try {
+      const token = getAuthToken(userRole);
+      const response = await fetch(`${API_BASE_URL}/api/payment/cancel-deal`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ 
+          dealId: deal._id, 
+          reason: reason || `Cancelled by ${userRole}`
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        toast.success(data.refunded ? '❌ Deal cancelled and payment refunded' : '❌ Deal cancelled');
+        if (onSuccess) onSuccess();
+        setTimeout(() => onClose(), 1500);
+      } else {
+        const error = await response.json();
+        toast.error(error.error || 'Failed to cancel deal');
+      }
+    } catch (error) {
+      console.error('Error cancelling deal:', error);
+      toast.error('Unable to cancel deal');
+    } finally {
+      setCancelling(false);
     }
   };
 
@@ -503,12 +545,22 @@ const DealFlowModal = ({ deal, onClose, onSuccess, userRole, mode = 'view' }) =>
                 <p className="text-gray-600">You'll earn ₹{deal.cardholderCommission} commission</p>
               </div>
 
-              <button
-                onClick={handleAcceptDeal}
-                className="w-full bg-green-600 text-white py-4 px-6 rounded-lg hover:bg-green-700 font-bold text-lg shadow-lg"
-              >
-                ✅ Accept Deal & Continue
-              </button>
+              <div className="space-y-3">
+                <button
+                  onClick={handleAcceptDeal}
+                  className="w-full bg-green-600 text-white py-4 px-6 rounded-lg hover:bg-green-700 font-bold text-lg shadow-lg"
+                >
+                  ✅ Accept Deal & Continue
+                </button>
+                
+                <button
+                  onClick={() => handleCancelDeal('Declined by cardholder - deal not accepted')}
+                  disabled={cancelling}
+                  className="w-full bg-red-500 text-white py-3 px-6 rounded-lg hover:bg-red-600 disabled:opacity-50 font-semibold text-sm"
+                >
+                  {cancelling ? '⏳ Cancelling...' : '❌ Decline Deal'}
+                </button>
+              </div>
             </div>
           )}
 
@@ -523,13 +575,23 @@ const DealFlowModal = ({ deal, onClose, onSuccess, userRole, mode = 'view' }) =>
                 <p className="text-sm text-gray-600">Your payment will be held in escrow until delivery</p>
               </div>
 
-              <button
-                onClick={handleInitiatePayment}
-                disabled={processingPayment}
-                className="w-full bg-blue-600 text-white py-4 px-6 rounded-lg hover:bg-blue-700 disabled:opacity-50 font-bold text-lg shadow-lg"
-              >
-                {processingPayment ? '⏳ Processing...' : '💰 Pay Now via Razorpay'}
-              </button>
+              <div className="space-y-3">
+                <button
+                  onClick={handleInitiatePayment}
+                  disabled={processingPayment}
+                  className="w-full bg-blue-600 text-white py-4 px-6 rounded-lg hover:bg-blue-700 disabled:opacity-50 font-bold text-lg shadow-lg"
+                >
+                  {processingPayment ? '⏳ Processing...' : '💰 Pay Now via Razorpay'}
+                </button>
+                
+                <button
+                  onClick={() => handleCancelDeal('Cancelled by buyer before payment')}
+                  disabled={cancelling || processingPayment}
+                  className="w-full bg-red-500 text-white py-3 px-6 rounded-lg hover:bg-red-600 disabled:opacity-50 font-semibold text-sm"
+                >
+                  {cancelling ? '⏳ Cancelling...' : '❌ Cancel Deal'}
+                </button>
+              </div>
             </div>
           )}
 
@@ -646,13 +708,23 @@ const DealFlowModal = ({ deal, onClose, onSuccess, userRole, mode = 'view' }) =>
                 </div>
               </div>
 
-              <button
-                onClick={handleSubmitAddress}
-                disabled={submittingAddress}
-                className="w-full bg-purple-600 text-white py-3 px-6 rounded-lg hover:bg-purple-700 disabled:opacity-50 font-bold text-lg shadow-lg mt-4"
-              >
-                {submittingAddress ? '⏳ Submitting...' : '📍 Share Address & Continue'}
-              </button>
+              <div className="space-y-3 mt-4">
+                <button
+                  onClick={handleSubmitAddress}
+                  disabled={submittingAddress}
+                  className="w-full bg-purple-600 text-white py-3 px-6 rounded-lg hover:bg-purple-700 disabled:opacity-50 font-bold text-lg shadow-lg"
+                >
+                  {submittingAddress ? '⏳ Submitting...' : '📍 Share Address & Continue'}
+                </button>
+                
+                <button
+                  onClick={() => handleCancelDeal('Cancelled by buyer after payment - refund will be processed')}
+                  disabled={cancelling || submittingAddress}
+                  className="w-full bg-red-500 text-white py-2 px-6 rounded-lg hover:bg-red-600 disabled:opacity-50 font-semibold text-sm"
+                >
+                  {cancelling ? '⏳ Cancelling...' : '❌ Cancel Deal (Refund)'}
+                </button>
+              </div>
             </div>
           )}
 
@@ -779,12 +851,20 @@ const DealFlowModal = ({ deal, onClose, onSuccess, userRole, mode = 'view' }) =>
             <div className="text-center py-12">
               <div className="text-8xl mb-6">⏳</div>
               <h3 className="text-2xl font-bold text-gray-800 mb-3">Looking for a Cardholder...</h3>
-              <p className="text-gray-600 text-lg">Your deal is live! Waiting for someone to accept it.</p>
-              <div className="mt-6">
+              <p className="text-gray-600 text-lg mb-6">Your deal is live! Waiting for someone to accept it.</p>
+              <div className="mt-6 mb-8">
                 <div className="animate-pulse inline-block bg-blue-100 text-blue-800 px-6 py-3 rounded-full font-semibold">
                   🔍 Searching...
                 </div>
               </div>
+              
+              <button
+                onClick={() => handleCancelDeal('Cancelled by buyer while waiting for cardholder')}
+                disabled={cancelling}
+                className="bg-red-500 text-white py-2 px-6 rounded-lg hover:bg-red-600 disabled:opacity-50 font-semibold"
+              >
+                {cancelling ? '⏳ Cancelling...' : '❌ Cancel Deal'}
+              </button>
             </div>
           )}
 
@@ -792,7 +872,15 @@ const DealFlowModal = ({ deal, onClose, onSuccess, userRole, mode = 'view' }) =>
             <div className="text-center py-12">
               <div className="text-8xl mb-6">💳</div>
               <h3 className="text-2xl font-bold text-gray-800 mb-3">Waiting for Buyer Payment</h3>
-              <p className="text-gray-600 text-lg">The buyer will make the payment soon</p>
+              <p className="text-gray-600 text-lg mb-6">The buyer will make the payment soon</p>
+              
+              <button
+                onClick={() => handleCancelDeal('Cancelled by cardholder before payment')}
+                disabled={cancelling}
+                className="bg-red-500 text-white py-2 px-6 rounded-lg hover:bg-red-600 disabled:opacity-50 font-semibold"
+              >
+                {cancelling ? '⏳ Cancelling...' : '❌ Cancel Deal'}
+              </button>
             </div>
           )}
 
@@ -800,7 +888,15 @@ const DealFlowModal = ({ deal, onClose, onSuccess, userRole, mode = 'view' }) =>
             <div className="text-center py-12">
               <div className="text-8xl mb-6">📍</div>
               <h3 className="text-2xl font-bold text-gray-800 mb-3">Waiting for Shipping Address</h3>
-              <p className="text-gray-600 text-lg">Buyer will provide the delivery address</p>
+              <p className="text-gray-600 text-lg mb-6">Buyer will provide the delivery address</p>
+              
+              <button
+                onClick={() => handleCancelDeal('Cancelled by cardholder after buyer payment - refund will be processed')}
+                disabled={cancelling}
+                className="bg-red-500 text-white py-2 px-6 rounded-lg hover:bg-red-600 disabled:opacity-50 font-semibold"
+              >
+                {cancelling ? '⏳ Cancelling...' : '❌ Cancel Deal (Refund)'}
+              </button>
             </div>
           )}
 
@@ -808,7 +904,15 @@ const DealFlowModal = ({ deal, onClose, onSuccess, userRole, mode = 'view' }) =>
             <div className="text-center py-12">
               <div className="text-8xl mb-6">📦</div>
               <h3 className="text-2xl font-bold text-gray-800 mb-3">Waiting for Order</h3>
-              <p className="text-gray-600 text-lg">Cardholder will place the order and provide details</p>
+              <p className="text-gray-600 text-lg mb-6">Cardholder will place the order and provide details</p>
+              
+              <button
+                onClick={() => handleCancelDeal('Cancelled by buyer after address shared - refund will be processed')}
+                disabled={cancelling}
+                className="bg-red-500 text-white py-2 px-6 rounded-lg hover:bg-red-600 disabled:opacity-50 font-semibold"
+              >
+                {cancelling ? '⏳ Cancelling...' : '❌ Cancel Deal (Refund)'}
+              </button>
             </div>
           )}
 

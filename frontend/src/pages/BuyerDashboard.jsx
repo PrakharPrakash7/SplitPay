@@ -5,6 +5,7 @@ import { io } from 'socket.io-client';
 import AddressForm from '../components/AddressForm';
 import DealFlowModal from '../components/DealFlowModal';
 import { API_BASE_URL } from '../utils/api';
+import { getAuthToken, clearAuth } from '../utils/authHelper';
 
 const BuyerDashboard = () => {
   const navigate = useNavigate();
@@ -18,6 +19,7 @@ const BuyerDashboard = () => {
   const [paymentModal, setPaymentModal] = useState({ show: false, deal: null });
   const [showDealModal, setShowDealModal] = useState(false);
   const [modalDeal, setModalDeal] = useState(null);
+  const [autoOpenedDealId, setAutoOpenedDealId] = useState(null); // Track auto-opened deal
 
   const resolveInvoiceUrl = (url) => {
     if (!url) return null;
@@ -88,7 +90,7 @@ const BuyerDashboard = () => {
   // Fetch deals from backend
   const fetchDeals = useCallback(async () => {
     try {
-      const token = localStorage.getItem('token');
+      const token = getAuthToken('buyer');
       const response = await fetch(`${API_BASE_URL}/api/deals`, {
         headers: {
           'Authorization': `Bearer ${token}`
@@ -99,6 +101,17 @@ const BuyerDashboard = () => {
         const data = await response.json();
         setDeals(data.deals || []);
         console.log('✅ Deals refreshed:', data.deals?.length || 0);
+        
+        // Auto-open modal for active deals that need buyer action
+        const activeStatuses = ['pending', 'matched', 'awaiting_payment', 'payment_authorized', 'address_shared', 'disbursed'];
+        const activeDeal = data.deals?.find(d => activeStatuses.includes(d.status));
+        
+        if (activeDeal && activeDeal._id !== autoOpenedDealId) {
+          console.log(`🚀 Auto-opening modal for deal ${activeDeal._id} in status: ${activeDeal.status}`);
+          setModalDeal(activeDeal);
+          setShowDealModal(true);
+          setAutoOpenedDealId(activeDeal._id);
+        }
       }
     } catch (error) {
       console.error('Error fetching deals:', error);
@@ -119,7 +132,7 @@ const BuyerDashboard = () => {
     }
 
     try {
-      const token = localStorage.getItem('token');
+      const token = getAuthToken('buyer');
       const response = await fetch(`${API_BASE_URL}/api/payment/cancel-deal`, {
         method: 'POST',
         headers: {
@@ -132,7 +145,7 @@ const BuyerDashboard = () => {
       if (response.ok) {
         const data = await response.json();
         toast.success(data.refunded ? '❌ Deal cancelled and payment refunded' : '❌ Deal cancelled');
-        fetchDeals();
+        await fetchDeals(); // Wait for deals to refresh
       } else {
         const error = await response.json();
         toast.error(error.error || 'Failed to cancel deal');
@@ -150,7 +163,7 @@ const BuyerDashboard = () => {
     }
 
     try {
-      const token = localStorage.getItem('token');
+      const token = getAuthToken('buyer');
       const response = await fetch(`${API_BASE_URL}/api/deals/${dealId}/mark-received`, {
         method: 'POST',
         headers: {
@@ -161,7 +174,7 @@ const BuyerDashboard = () => {
 
       if (response.ok) {
         toast.success('✅ Order marked as received! Deal completed.');
-        fetchDeals();
+        await fetchDeals(); // Wait for deals to refresh
       } else {
         const error = await response.json();
         toast.error(error.error || 'Failed to mark as received');
@@ -184,7 +197,7 @@ const BuyerDashboard = () => {
     setCreating(true);
     
     try {
-      const token = localStorage.getItem('token');
+      const token = getAuthToken('buyer');
       const response = await fetch(`${API_BASE_URL}/api/deals`, {
         method: 'POST',
         headers: {
@@ -214,8 +227,7 @@ const BuyerDashboard = () => {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("role");
+    clearAuth('buyer');
     navigate("/");
   };
 
@@ -234,7 +246,7 @@ const BuyerDashboard = () => {
         console.log("💳 Payment successful:", response);
         
         try {
-          const token = localStorage.getItem("token");
+          const token = getAuthToken('buyer');
           const verifyResponse = await fetch(`${API_BASE_URL}/api/payment/verify-payment`, {
             method: "POST",
             headers: {
@@ -295,7 +307,7 @@ const BuyerDashboard = () => {
   // Initiate payment
   const initiatePayment = async (deal) => {
     try {
-      const token = localStorage.getItem("token");
+      const token = getAuthToken('buyer');
       const response = await fetch(`${API_BASE_URL}/api/payment/create-order`, {
         method: "POST",
         headers: {
@@ -321,7 +333,7 @@ const BuyerDashboard = () => {
 
   // Socket.io setup
   useEffect(() => {
-    const token = localStorage.getItem("token");
+    const token = getAuthToken('buyer');
     if (!token) {
       navigate("/");
       return;
@@ -530,6 +542,11 @@ const BuyerDashboard = () => {
                             ⏰ Pay within: <span className="font-semibold">{getTimeRemaining(deal.paymentExpiresAt)}</span>
                           </p>
                         )}
+                        {deal.status === 'awaiting_payment' && deal.paymentExpiresAt && (
+                          <p className="text-sm text-orange-600">
+                            ⏰ Complete payment within: <span className="font-semibold">{getTimeRemaining(deal.paymentExpiresAt)}</span>
+                          </p>
+                        )}
                         {deal.status === 'payment_authorized' && deal.addressExpiresAt && (
                           <p className="text-sm text-orange-600">
                             ⏰ Share address within: <span className="font-semibold">{getTimeRemaining(deal.addressExpiresAt)}</span>
@@ -556,6 +573,22 @@ const BuyerDashboard = () => {
                       </div>
 
                       {/* Action Buttons */}
+                      {deal.status === 'pending' && (
+                        <div className="mt-4">
+                          <div className="p-3 bg-yellow-50 border border-yellow-200 rounded mb-2">
+                            <p className="text-sm text-yellow-800 text-center">
+                              ⏳ Waiting for a cardholder to accept...
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => cancelDeal(deal._id, 'Cancelled by buyer while waiting for cardholder')}
+                            className="w-full bg-red-500 text-white py-2 px-4 rounded hover:bg-red-600 transition text-sm"
+                          >
+                            ❌ Cancel Deal
+                          </button>
+                        </div>
+                      )}
+
                       {deal.status === 'matched' && (
                         <div className="mt-4 space-y-2">
                           <button
@@ -566,6 +599,26 @@ const BuyerDashboard = () => {
                           </button>
                           <button
                             onClick={() => cancelDeal(deal._id, 'Cancelled by buyer before payment')}
+                            className="w-full bg-red-500 text-white py-2 px-4 rounded hover:bg-red-600 transition text-sm"
+                          >
+                            ❌ Cancel Deal
+                          </button>
+                        </div>
+                      )}
+
+                      {deal.status === 'awaiting_payment' && (
+                        <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded">
+                          <p className="text-sm text-yellow-800 text-center mb-3">
+                            ⏳ Payment in progress... If Razorpay doesn't load, please cancel and try again.
+                          </p>
+                          <button
+                            onClick={() => initiatePayment(deal)}
+                            className="w-full bg-green-600 text-white py-2 px-4 rounded hover:bg-green-700 transition mb-2"
+                          >
+                            💳 Retry Payment (₹{deal.discountedPrice})
+                          </button>
+                          <button
+                            onClick={() => cancelDeal(deal._id, 'Payment not completed - cancelled by buyer')}
                             className="w-full bg-red-500 text-white py-2 px-4 rounded hover:bg-red-600 transition text-sm"
                           >
                             ❌ Cancel Deal
@@ -823,18 +876,6 @@ const BuyerDashboard = () => {
                         </div>
                       )}
 
-                      {/* View Full Details Button - Show for all deals */}
-                      <div className="mt-4 pt-4 border-t border-gray-200">
-                        <button
-                          onClick={() => {
-                            setModalDeal(deal);
-                            setShowDealModal(true);
-                          }}
-                          className="w-full bg-gradient-to-r from-blue-500 to-purple-500 text-white py-2 px-4 rounded-lg hover:from-blue-600 hover:to-purple-600 font-semibold shadow-md"
-                        >
-                          👁️ View Full Details in Modal
-                        </button>
-                      </div>
                     </div>
                   </div>
                 </div>
@@ -875,13 +916,41 @@ const BuyerDashboard = () => {
             setShowDealModal(false);
             setModalDeal(null);
           }}
-          onSuccess={(createdDeal) => {
+          onSuccess={async (createdDeal) => {
             console.log("✅ Deal action completed");
+            
+            // Refresh deals after any action
+            await fetchDeals();
+            
             if (createdDeal) {
               // New deal created - set it as modalDeal to show waiting state
               setModalDeal(createdDeal);
+              setAutoOpenedDealId(createdDeal._id);
+            } else if (modalDeal) {
+              // Check updated status of current deal
+              const token = localStorage.getItem('token');
+              const response = await fetch(`${API_BASE_URL}/api/deals`, {
+                headers: {'Authorization': `Bearer ${token}`}
+              });
+              
+              if (response.ok) {
+                const data = await response.json();
+                const updatedDeal = data.deals?.find(d => d._id === modalDeal._id);
+                
+                // Close modal only if deal reached a final state
+                if (updatedDeal && ['completed', 'cancelled', 'expired', 'refunded', 'failed'].includes(updatedDeal.status)) {
+                  console.log("🏁 Deal completed, closing modal");
+                  setTimeout(() => {
+                    setShowDealModal(false);
+                    setModalDeal(null);
+                    setAutoOpenedDealId(null);
+                  }, 2000); // Small delay to show completion screen
+                } else if (updatedDeal) {
+                  // Update with latest deal data
+                  setModalDeal(updatedDeal);
+                }
+              }
             }
-            fetchDeals(); // Refresh deals
           }}
         />
       )}

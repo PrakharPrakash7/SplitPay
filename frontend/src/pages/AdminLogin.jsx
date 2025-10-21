@@ -2,6 +2,7 @@ import { useState } from "react";
 import toast from "react-hot-toast";
 import { useNavigate } from "react-router-dom";
 import { API_BASE_URL } from "../utils/api";
+import { saveAuth } from "../utils/authHelper";
 
 const AdminLogin = () => {
   const [email, setEmail] = useState("");
@@ -19,8 +20,7 @@ const AdminLogin = () => {
       
       if (res.ok) {
         toast.success(`Admin logged in: ${data.user.name}`);
-        localStorage.setItem("token", data.token);
-        localStorage.setItem("role", "admin");
+        saveAuth('admin', data.token);
         navigate("/admin-dashboard");
       } else {
         toast.error(data.message || "Invalid credentials");
