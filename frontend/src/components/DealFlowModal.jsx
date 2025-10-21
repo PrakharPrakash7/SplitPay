@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../utils/api';
 import { getAuthToken } from '../utils/authHelper';
@@ -7,6 +7,16 @@ const DealFlowModal = ({ deal, onClose, onSuccess, userRole, mode = 'view' }) =>
   // State for creating new deal (Buyer)
   const [productUrl, setProductUrl] = useState('');
   const [creatingDeal, setCreatingDeal] = useState(false);
+  
+  // Log when deal prop changes
+  useEffect(() => {
+    console.log('🔄 DealFlowModal: deal prop changed', {
+      dealId: deal?._id,
+      status: deal?.status,
+      hasShippingDetails: !!deal?.shippingDetails,
+      userRole
+    });
+  }, [deal, userRole]);
   
   // State for payment (Buyer)
   const [processingPayment, setProcessingPayment] = useState(false);

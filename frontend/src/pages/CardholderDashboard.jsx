@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import toast from "react-hot-toast";
 import { useNavigate } from "react-router-dom";
 import { io } from "socket.io-client";
@@ -14,7 +14,65 @@ const CardholderDashboard = () => {
   const [showDealModal, setShowDealModal] = useState(false);
   const [selectedDeal, setSelectedDeal] = useState(null);
   const [autoOpenedDealId, setAutoOpenedDealId] = useState(null); // Track auto-opened deal
+  const [modalRefreshKey, setModalRefreshKey] = useState(0); // Force modal refresh
   const navigate = useNavigate();
+  
+  // Use refs to access latest state in socket handlers
+  const selectedDealRef = useRef(selectedDeal);
+  const showDealModalRef = useRef(showDealModal);
+  
+  useEffect(() => {
+    selectedDealRef.current = selectedDeal;
+    showDealModalRef.current = showDealModal;
+  }, [selectedDeal, showDealModal]);
+  
+  // Auto-refresh modal when it's open - poll every 3 seconds
+  // BUT: Don't refresh when user is filling order form (address_shared status)
+  useEffect(() => {
+    if (!showDealModal || !selectedDeal?._id) {
+      return;
+    }
+    
+    // Don't auto-refresh if user is filling order form
+    if (selectedDeal.status === 'address_shared') {
+      console.log('⏸️ Pausing auto-refresh - user is filling order form');
+      return;
+    }
+    
+    console.log('🔄 Starting auto-refresh for modal with deal:', selectedDeal._id);
+    
+    const refreshInterval = setInterval(async () => {
+      console.log('⏰ Auto-refreshing modal deal data...');
+      try {
+        const token = getAuthToken('cardholder');
+        const response = await fetch(`${API_BASE_URL}/api/deals`, {
+          headers: {'Authorization': `Bearer ${token}`}
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          const updatedDeal = data.deals?.find(d => d._id === selectedDeal._id);
+          
+          if (updatedDeal && updatedDeal.status !== selectedDeal.status) {
+            console.log('✅ Deal status changed:', selectedDeal.status, '→', updatedDeal.status);
+            setSelectedDeal(updatedDeal);
+            setModalRefreshKey(prev => prev + 1);
+          } else if (updatedDeal && updatedDeal.status === 'address_shared' && !selectedDeal.shippingDetails && updatedDeal.shippingDetails) {
+            console.log('✅ Address details received!');
+            setSelectedDeal(updatedDeal);
+            setModalRefreshKey(prev => prev + 1);
+          }
+        }
+      } catch (error) {
+        console.error('❌ Error refreshing modal:', error);
+      }
+    }, 3000); // Poll every 3 seconds
+    
+    return () => {
+      console.log('🛑 Stopping auto-refresh');
+      clearInterval(refreshInterval);
+    };
+  }, [showDealModal, selectedDeal]);
 
   const getStatusLabel = (deal) => {
     const labels = {
@@ -235,8 +293,8 @@ const CardholderDashboard = () => {
       toast.info(message || "Deal was accepted by another cardholder");
       await fetchDeals();
       
-      // Close modal if it was open for this deal
-      if (showDealModal && selectedDeal?._id === dealId) {
+      // Close modal if it was open for this deal - use refs for latest state
+      if (showDealModalRef.current && selectedDealRef.current?._id === dealId) {
         setShowDealModal(false);
         setSelectedDeal(null);
       }
@@ -248,8 +306,10 @@ const CardholderDashboard = () => {
       toast.success(message || "💰 Payment authorized! Waiting for address...");
       await fetchDeals();
       
-      // Update modal if it's open for this deal
-      if (showDealModal && selectedDeal?._id === dealId) {
+      // Update modal if it's open for this deal - use refs for latest state
+      console.log("🔍 Modal state check - showDealModal:", showDealModalRef.current, "selectedDeal._id:", selectedDealRef.current?._id);
+      if (showDealModalRef.current && selectedDealRef.current?._id === dealId) {
+        console.log("✅ Modal is open for this deal, fetching updated data...");
         const token = getAuthToken('cardholder');
         const response = await fetch(`${API_BASE_URL}/api/deals`, {
           headers: {'Authorization': `Bearer ${token}`}
@@ -257,12 +317,16 @@ const CardholderDashboard = () => {
         if (response.ok) {
           const data = await response.json();
           const updatedDeal = data.deals?.find(d => d._id === dealId);
-          if (updatedDeal) setSelectedDeal(updatedDeal);
+          if (updatedDeal) {
+            console.log("🔄 Updating modal with payment authorized data");
+            setSelectedDeal(updatedDeal);
+            setModalRefreshKey(prev => prev + 1);
+          }
         }
       }
     });
 
-    // Listen for address received
+    // Listen for address received - CRITICAL for cardholder modal refresh
     socket.on("addressReceived", async ({ dealId, address, product }) => {
       console.log("📍 Address received for deal:", dealId);
       console.log("📦 Product details:", product);
@@ -271,8 +335,10 @@ const CardholderDashboard = () => {
       toast.success("📍 Buyer shared shipping address!");
       await fetchDeals();
       
-      // Update modal if it's open for this deal
-      if (showDealModal && selectedDeal?._id === dealId) {
+      // Update modal if it's open for this deal - use refs for latest state
+      console.log("🔍 Modal state check - showDealModal:", showDealModalRef.current, "selectedDeal._id:", selectedDealRef.current?._id);
+      if (showDealModalRef.current && selectedDealRef.current?._id === dealId) {
+        console.log("✅ Modal is open for this deal, fetching updated data with ADDRESS...");
         const token = getAuthToken('cardholder');
         const response = await fetch(`${API_BASE_URL}/api/deals`, {
           headers: {'Authorization': `Bearer ${token}`}
@@ -281,12 +347,14 @@ const CardholderDashboard = () => {
           const data = await response.json();
           const updatedDeal = data.deals?.find(d => d._id === dealId);
           if (updatedDeal) {
-            console.log("🔄 Updating modal with address data");
+            console.log("🔄 Updating modal with address data - FORCE REFRESH", updatedDeal.status, updatedDeal.shippingDetails);
             setSelectedDeal(updatedDeal);
+            setModalRefreshKey(prev => prev + 1);
           }
         }
       } else {
         // If modal not open, open it with the updated deal
+        console.log("🚀 Modal not open, opening with address data...");
         const token = getAuthToken('cardholder');
         const response = await fetch(`${API_BASE_URL}/api/deals`, {
           headers: {'Authorization': `Bearer ${token}`}
@@ -295,10 +363,11 @@ const CardholderDashboard = () => {
           const data = await response.json();
           const updatedDeal = data.deals?.find(d => d._id === dealId);
           if (updatedDeal) {
-            console.log("🚀 Opening modal with address data");
+            console.log("🚀 Opening modal with address data", updatedDeal.status);
             setSelectedDeal(updatedDeal);
             setShowDealModal(true);
             setAutoOpenedDealId(dealId);
+            setModalRefreshKey(prev => prev + 1);
           }
         }
       }
@@ -310,8 +379,8 @@ const CardholderDashboard = () => {
       toast.success(message || "🚚 Order has been shipped!");
       await fetchDeals();
       
-      // Update modal if it's open for this deal
-      if (showDealModal && selectedDeal?._id === dealId) {
+      // Update modal if it's open for this deal - use refs for latest state
+      if (showDealModalRef.current && selectedDealRef.current?._id === dealId) {
         const token = getAuthToken('cardholder');
         const response = await fetch(`${API_BASE_URL}/api/deals`, {
           headers: {'Authorization': `Bearer ${token}`}
@@ -319,7 +388,11 @@ const CardholderDashboard = () => {
         if (response.ok) {
           const data = await response.json();
           const updatedDeal = data.deals?.find(d => d._id === dealId);
-          if (updatedDeal) setSelectedDeal(updatedDeal);
+          if (updatedDeal) {
+            console.log("🔄 Updating modal with shipped data");
+            setSelectedDeal(updatedDeal);
+            setModalRefreshKey(prev => prev + 1);
+          }
         }
       }
     });
@@ -330,8 +403,8 @@ const CardholderDashboard = () => {
       toast.success(message || "✅ Payment captured!");
       await fetchDeals();
       
-      // Update modal if it's open for this deal
-      if (showDealModal && selectedDeal?._id === dealId) {
+      // Update modal if it's open for this deal - use refs for latest state
+      if (showDealModalRef.current && selectedDealRef.current?._id === dealId) {
         const token = getAuthToken('cardholder');
         const response = await fetch(`${API_BASE_URL}/api/deals`, {
           headers: {'Authorization': `Bearer ${token}`}
@@ -339,7 +412,11 @@ const CardholderDashboard = () => {
         if (response.ok) {
           const data = await response.json();
           const updatedDeal = data.deals?.find(d => d._id === dealId);
-          if (updatedDeal) setSelectedDeal(updatedDeal);
+          if (updatedDeal) {
+            console.log("🔄 Updating modal with payment captured data");
+            setSelectedDeal(updatedDeal);
+            setModalRefreshKey(prev => prev + 1);
+          }
         }
       }
     });
@@ -350,8 +427,8 @@ const CardholderDashboard = () => {
       toast.success(message || "💸 Your payout has been initiated!");
       await fetchDeals();
       
-      // Update modal if it's open for this deal
-      if (showDealModal && selectedDeal?._id === dealId) {
+      // Update modal if it's open for this deal - use refs for latest state
+      if (showDealModalRef.current && selectedDealRef.current?._id === dealId) {
         const token = getAuthToken('cardholder');
         const response = await fetch(`${API_BASE_URL}/api/deals`, {
           headers: {'Authorization': `Bearer ${token}`}
@@ -359,7 +436,11 @@ const CardholderDashboard = () => {
         if (response.ok) {
           const data = await response.json();
           const updatedDeal = data.deals?.find(d => d._id === dealId);
-          if (updatedDeal) setSelectedDeal(updatedDeal);
+          if (updatedDeal) {
+            console.log("🔄 Updating modal with payout data");
+            setSelectedDeal(updatedDeal);
+            setModalRefreshKey(prev => prev + 1);
+          }
         }
       }
     });
@@ -370,8 +451,8 @@ const CardholderDashboard = () => {
       toast.error(message || "⏰ Deal has expired!");
       await fetchDeals();
       
-      // Close modal if it's open for this deal
-      if (showDealModal && selectedDeal?._id === dealId) {
+      // Close modal if it's open for this deal - use refs for latest state
+      if (showDealModalRef.current && selectedDealRef.current?._id === dealId) {
         toast.info("Closing expired deal...");
         setTimeout(() => {
           setShowDealModal(false);
@@ -387,8 +468,8 @@ const CardholderDashboard = () => {
       toast.info(message || "❌ Deal has been cancelled");
       await fetchDeals();
       
-      // Close modal if it's open for this deal
-      if (showDealModal && selectedDeal?._id === dealId) {
+      // Close modal if it's open for this deal - use refs for latest state
+      if (showDealModalRef.current && selectedDealRef.current?._id === dealId) {
         setTimeout(() => {
           setShowDealModal(false);
           setSelectedDeal(null);
@@ -403,8 +484,8 @@ const CardholderDashboard = () => {
       toast.success(message || "✅ Deal completed! Thank you!");
       await fetchDeals();
       
-      // Update modal if it's open for this deal
-      if (showDealModal && selectedDeal?._id === dealId) {
+      // Update modal if it's open for this deal - use refs for latest state
+      if (showDealModalRef.current && selectedDealRef.current?._id === dealId) {
         const token = getAuthToken('cardholder');
         const response = await fetch(`${API_BASE_URL}/api/deals`, {
           headers: {'Authorization': `Bearer ${token}`}
@@ -412,7 +493,11 @@ const CardholderDashboard = () => {
         if (response.ok) {
           const data = await response.json();
           const updatedDeal = data.deals?.find(d => d._id === dealId);
-          if (updatedDeal) setSelectedDeal(updatedDeal);
+          if (updatedDeal) {
+            console.log("🔄 Updating modal with completed data");
+            setSelectedDeal(updatedDeal);
+            setModalRefreshKey(prev => prev + 1);
+          }
         }
       }
     });
@@ -683,6 +768,7 @@ const CardholderDashboard = () => {
       {/* Deal Flow Modal */}
       {showDealModal && selectedDeal && (
         <DealFlowModal
+          key={`${selectedDeal._id}-${selectedDeal.status}-${modalRefreshKey}`}
           deal={selectedDeal}
           userRole="cardholder"
           onClose={() => {
@@ -708,7 +794,9 @@ const CardholderDashboard = () => {
               
               if (updatedDeal) {
                 // Update modal with latest deal data
+                console.log("🔄 onSuccess: Updating modal with latest deal data");
                 setSelectedDeal(updatedDeal);
+                setModalRefreshKey(prev => prev + 1);
                 
                 // Close modal only for order_placed, cancelled, or expired
                 if (['order_placed', 'cancelled', 'expired', 'refunded', 'failed'].includes(updatedDeal.status)) {
