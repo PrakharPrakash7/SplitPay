@@ -542,11 +542,12 @@ const BuyerDashboard = () => {
                         )}
                         {deal.product?.bankOffers && deal.product.bankOffers.length > 0 && (
                           <div className="mt-2">
-                            <p className="text-sm font-semibold text-blue-600">Bank Offers:</p>
-                            <ul className="text-sm text-gray-600 ml-4">
+                            <p className="text-sm font-semibold text-blue-600">Bank Offers ({deal.product.bankOffers.length}):</p>
+                            <ul className="text-sm text-gray-700 ml-2 space-y-2">
                               {deal.product.bankOffers.map((offer, idx) => (
-                                <li key={idx}>
-                                  {offer.bank}: {offer.discount && `₹${offer.discount} off`}
+                                <li key={idx} className="flex items-start">
+                                  <span className="text-blue-500 mr-2">•</span>
+                                  <span className="flex-1">{offer.description || `${offer.bank} - ₹${offer.discount} off`}</span>
                                 </li>
                               ))}
                             </ul>

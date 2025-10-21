@@ -71,6 +71,16 @@ const DealFlowModal = ({ deal, onClose, onSuccess, userRole, mode = 'view' }) =>
     setCreatingDeal(true);
     try {
       const token = localStorage.getItem('token');
+      
+      if (!token) {
+        toast.error('❌ Authentication required. Please login again.');
+        console.error('No token found in localStorage');
+        return;
+      }
+
+      console.log('🔑 Creating deal with token:', token ? `${token.substring(0, 20)}...` : 'missing');
+      console.log('📦 Product URL:', productUrl);
+
       const response = await fetch(`${API_BASE_URL}/api/deals`, {
         method: 'POST',
         headers: {
@@ -87,7 +97,8 @@ const DealFlowModal = ({ deal, onClose, onSuccess, userRole, mode = 'view' }) =>
         // Don't close modal - keep it open to show waiting state
       } else {
         const error = await response.json();
-        toast.error(error.error || 'Failed to create deal');
+        console.error('❌ Deal creation failed:', error);
+        toast.error(error.error || error.message || 'Failed to create deal');
       }
     } catch (error) {
       console.error('Error creating deal:', error);

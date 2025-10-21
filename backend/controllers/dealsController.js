@@ -34,9 +34,15 @@ export const createDeal = async (req, res) => {
       // Try to extract numerical discount from the first bank offer
       const firstOffer = product.bankOffers[0];
       // Look for patterns like "₹4000 discount", "4000 off", "Save ₹4000"
-      const discountMatch = firstOffer.discount.match(/[₹\s]?([\d,]+)/);
-      if (discountMatch) {
-        totalBankDiscount = parseInt(discountMatch[1].replace(/,/g, ''));
+      if (firstOffer.discount && typeof firstOffer.discount === 'string') {
+        const discountMatch = firstOffer.discount.match(/[₹\s]?([\d,]+)/);
+        if (discountMatch) {
+          totalBankDiscount = parseInt(discountMatch[1].replace(/,/g, ''));
+        }
+      } else if (firstOffer.discountAmount && typeof firstOffer.discountAmount === 'number') {
+        totalBankDiscount = firstOffer.discountAmount;
+      } else if (firstOffer.discount && typeof firstOffer.discount === 'number') {
+        totalBankDiscount = firstOffer.discount;
       }
     }
     
