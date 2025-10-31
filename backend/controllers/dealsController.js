@@ -105,11 +105,8 @@ export const createDeal = async (req, res) => {
     }
 
     if (cardholders.length === 0) {
-      console.log("⚠ No cardholders found in the system");
-      return res.status(201).json({ 
-        deal,
-        message: "Deal created but no cardholders registered yet"
-      });
+      console.log("⚠ No cardholders found in the system (but will still emit Socket.io event)");
+      // Don't return - continue to Socket.io emit
     }
 
     // Send FCM notifications (optional - skip if Firebase not configured)
@@ -146,15 +143,21 @@ export const createDeal = async (req, res) => {
     }
 
     // Emit Socket.io event to cardholders room
-    io.to('cardholders').emit('newDeal', {
+    const eventData = {
       deal: {
         ...deal.toObject(),
         product: deal.product
       },
       message: 'New deal available!'
-    });
+    };
     
-    console.log("✓ Socket.io event emitted to cardholders room");
+    // Check how many sockets are in the cardholders room
+    const cardholdersRoom = io.sockets.adapter.rooms.get('cardholders');
+    const numCardholders = cardholdersRoom ? cardholdersRoom.size : 0;
+    
+    console.log(`📡 Emitting 'newDeal' event to ${numCardholders} cardholders in room with deal ID:`, deal._id);
+    io.to('cardholders').emit('newDeal', eventData);
+    console.log("✓ Socket.io 'newDeal' event emitted successfully");
 
     return res.status(201).json({ deal });
   } catch (err) {

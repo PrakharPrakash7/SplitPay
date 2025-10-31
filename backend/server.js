@@ -93,7 +93,10 @@ io.on("connection", (socket) => {
 
   socket.on("joinCardholders", () => {
     socket.join("cardholders");
-    //console.log(`💳 ${socket.id} joined cardholders room`);
+    console.log(`💳 ${socket.id} joined cardholders room`);
+    
+    // Test emit to confirm socket is receiving events
+    socket.emit("testConnection", { message: "You are connected to cardholders room!" });
   });
 
   socket.on("joinAdmins", () => {

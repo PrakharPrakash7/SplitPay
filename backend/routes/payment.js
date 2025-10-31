@@ -52,19 +52,57 @@ router.post('/create-order', verifyToken, async (req, res) => {
       return res.status(400).json({ error: `Cannot create order for deal with status: ${deal.status}` });
     }
 
-    // Calculate total amount (product price + 5% commission)
-    const productPrice = deal.product.price;
-    const commission = Math.round(productPrice * 0.05); // 5% commission
-    const totalAmount = productPrice + commission;
+    // Calculate total amount correctly:
+    // Buyer pays ONLY the discounted price (no extra fees)
+    // The platform fee is already included in the discount split
+    const originalPrice = deal.product.price;
+    const discountedPrice = deal.discountedPrice || originalPrice;
+    const totalAmount = discountedPrice; // Buyer pays ONLY discounted price
+
+    // 🔍 DEBUG: Log all price calculations
+    console.log('🔍 ========== PRICE BREAKDOWN ==========');
+    console.log('Deal ID:', dealId);
+    console.log('Product Title:', deal.product.title);
+    console.log('Original Price:', originalPrice);
+    console.log('Bank Discount:', deal.totalBankDiscount || 0);
+    console.log('Buyer Discount (80% of bank):', deal.buyerDiscount || 0);
+    console.log('Cardholder Commission (15% of bank):', deal.cardholderCommission || 0);
+    console.log('Platform Fee (5% of bank):', deal.platformFee || 0);
+    console.log('Discounted Price (buyer pays):', discountedPrice);
+    console.log('Total Amount (buyer pays):', totalAmount);
+    console.log('Cardholder will spend:', originalPrice - (deal.totalBankDiscount || 0));
+    console.log('Cardholder will receive:', discountedPrice - (deal.platformFee || 0));
+    console.log('Cardholder profit:', deal.cardholderCommission || 0);
+    console.log('🔍 ======================================');
 
     // Validate amount limits
+    const isTestMode = process.env.RAZORPAY_KEY_ID?.includes('test');
+    const TEST_MODE_LIMIT = 50000; // Razorpay test mode limit
     const MAX_AMOUNT = 200000; // 2 lakhs (₹2,00,000)
     const MIN_AMOUNT = 100; // Minimum ₹100
+
+    // Check test mode limits first
+    if (isTestMode && totalAmount > TEST_MODE_LIMIT) {
+      const maxProductPrice = Math.floor(TEST_MODE_LIMIT / 1.05);
+      return res.status(400).json({ 
+        error: `Test mode is limited to ₹${TEST_MODE_LIMIT.toLocaleString('en-IN')}`,
+        details: `Your total amount (₹${totalAmount.toLocaleString('en-IN')}) exceeds Razorpay's test mode limit. ` +
+                 `Discounted Price: ₹${discountedPrice.toLocaleString('en-IN')}`,
+        suggestions: [
+          `• Test with products priced at ₹${maxProductPrice.toLocaleString('en-IN')} or less`,
+          `• Switch to live mode (requires KYC) to support amounts up to ₹2,00,000`
+        ],
+        testModeLimit: TEST_MODE_LIMIT,
+        maxProductPriceForTest: maxProductPrice,
+        currentAmount: totalAmount,
+        mode: 'test'
+      });
+    }
 
     if (totalAmount > MAX_AMOUNT) {
       return res.status(400).json({ 
         error: `Amount exceeds maximum limit of ₹${MAX_AMOUNT.toLocaleString('en-IN')}`,
-        details: `Total amount: ₹${totalAmount.toLocaleString('en-IN')} (Product: ₹${productPrice.toLocaleString('en-IN')} + Commission: ₹${commission.toLocaleString('en-IN')})`,
+        details: `Total amount: ₹${totalAmount.toLocaleString('en-IN')} (Discounted Price: ₹${discountedPrice.toLocaleString('en-IN')})`,
         maxAmount: MAX_AMOUNT,
         currentAmount: totalAmount
       });
@@ -78,32 +116,39 @@ router.post('/create-order', verifyToken, async (req, res) => {
       });
     }
 
-    console.log(`💰 Payment amount: ₹${totalAmount.toLocaleString('en-IN')} (Product: ₹${productPrice.toLocaleString('en-IN')} + Commission: ₹${commission.toLocaleString('en-IN')})`);
+    console.log(`💰 Payment amount: ₹${totalAmount.toLocaleString('en-IN')} (Discounted Price) [${isTestMode ? 'TEST' : 'LIVE'} MODE]`);
 
     // Create Razorpay order with payment hold (escrow)
     const order = await createOrder(totalAmount, dealId, {
       buyerId: buyerId,
       cardholderId: deal.cardholderId.toString(),
-      productPrice,
-      commission
+      originalPrice,
+      discountedPrice
     });
 
     // Update deal with Razorpay order details
     deal.razorpayOrderId = order.id;
     deal.status = 'awaiting_payment';
     deal.paymentStatus = 'pending';
-    deal.commissionAmount = commission;
+    deal.commissionAmount = deal.platformFee || 0; // Store platform fee
     await deal.save();
 
     console.log(`✅ Order created for deal ${dealId}: ${order.id} (₹${totalAmount})`);
+
+    // 🔍 DEBUG: Log the response being sent to frontend
+    console.log('🔍 ========== RESPONSE DEBUG ==========');
+    console.log('order.amount (in paise):', order.amount);
+    console.log('order.amount / 100 (in rupees):', order.amount / 100);
+    console.log('totalAmount being sent:', totalAmount);
+    console.log('discountedPrice:', discountedPrice);
+    console.log('🔍 =====================================');
 
     // Notify buyer via Socket.io
     io.to(`user_${buyerId}`).emit('orderCreated', {
       dealId,
       orderId: order.id,
       amount: totalAmount,
-      productPrice,
-      commission
+      discountedPrice
     });
 
     res.status(200).json({
@@ -113,8 +158,7 @@ router.post('/create-order', verifyToken, async (req, res) => {
         amount: order.amount, // In paise
         amountInRupees: totalAmount,
         currency: order.currency,
-        productPrice,
-        commission
+        discountedPrice
       },
       razorpayKeyId: process.env.RAZORPAY_KEY_ID
     });
@@ -416,10 +460,9 @@ router.post('/capture-payment', verifyToken, async (req, res) => {
       return res.status(400).json({ error: 'Payment already captured' });
     }
 
-    // Calculate amounts
-    const productPrice = deal.product.price;
-    const commission = deal.commissionAmount || Math.round(productPrice * 0.05);
-    const totalAmount = productPrice + commission;
+    // Calculate amounts (buyer pays only discounted price)
+    const discountedPrice = deal.discountedPrice || deal.product.price;
+    const totalAmount = discountedPrice;
 
     // Capture payment from Razorpay
     const payment = await capturePayment(deal.razorpayPaymentId, totalAmount);
@@ -484,8 +527,9 @@ router.post('/initiate-payout', verifyToken, async (req, res) => {
     }
 
     const cardholder = deal.cardholderId;
-    const productPrice = deal.product.price;
-    const payoutAmount = productPrice; // Cardholder gets product price back
+    const discountedPrice = deal.discountedPrice || deal.product.price;
+    const platformFee = deal.platformFee || 0;
+    const payoutAmount = discountedPrice - platformFee; // Cardholder gets buyer payment minus platform fee
 
     // Check cardholder payout details
     const payoutDetails = cardholder.cardholderPayoutDetails;
@@ -696,9 +740,8 @@ router.post('/admin/mark-shipped', verifyToken, async (req, res) => {
     try {
       console.log('💰 [ADMIN TEST] Capturing payment immediately for testing...');
       
-      const productPrice = deal.product.price;
-      const commission = deal.commissionAmount || Math.round(productPrice * 0.05);
-      const totalAmount = productPrice + commission;
+      const discountedPrice = deal.discountedPrice || deal.product.price;
+      const totalAmount = discountedPrice;
 
       // Capture payment from Razorpay
       const payment = await capturePayment(deal.razorpayPaymentId, totalAmount);
@@ -804,8 +847,9 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
 // Helper function to trigger payout
 async function initiatePayoutTrigger(deal) {
   const cardholder = await User.findById(deal.cardholderId);
-  const productPrice = deal.product.price;
-  const payoutAmount = productPrice;
+  const discountedPrice = deal.discountedPrice || deal.product.price;
+  const platformFee = deal.platformFee || 0;
+  const payoutAmount = discountedPrice - platformFee; // Cardholder gets buyer payment minus platform fee
 
   const payoutDetails = cardholder.cardholderPayoutDetails;
 

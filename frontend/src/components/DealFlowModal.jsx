@@ -194,12 +194,19 @@ const DealFlowModal = ({ deal, onClose, onSuccess, userRole, mode = 'view' }) =>
       }
 
       function openRazorpayCheckout() {
+        // Truncate description to max 255 characters (Razorpay limit)
+        const productTitle = deal.product?.title || 'Product Purchase';
+        const maxDescriptionLength = 255;
+        const truncatedDescription = productTitle.length > maxDescriptionLength 
+          ? productTitle.substring(0, maxDescriptionLength - 3) + '...' 
+          : productTitle;
+
         const options = {
           key: data.razorpayKeyId,
           amount: data.order.amount,
           currency: data.order.currency,
           name: 'SplitPay',
-          description: deal.product?.title || 'Product Purchase',
+          description: truncatedDescription,
           order_id: data.order.id,
           handler: async function (response) {
             console.log('💰 Payment successful from Razorpay, verifying...', response);
@@ -812,6 +819,24 @@ const DealFlowModal = ({ deal, onClose, onSuccess, userRole, mode = 'view' }) =>
                   📍 Address Received! Place the order and provide details
                 </p>
               </div>
+
+              {/* Product URL - CRITICAL for cardholder to place order */}
+              {deal.product?.url && (
+                <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-4 mb-4">
+                  <h4 className="font-bold text-blue-900 mb-2 text-lg">🛒 Product Link:</h4>
+                  <a
+                    href={deal.product.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block w-full text-center bg-blue-600 text-white py-3 px-4 rounded-lg hover:bg-blue-700 font-semibold text-base shadow-md"
+                  >
+                    🔗 Open Product Page & Place Order
+                  </a>
+                  <p className="text-xs text-blue-700 mt-2 text-center">
+                    👆 Click to open the product on Amazon/Flipkart and place order with address below
+                  </p>
+                </div>
+              )}
 
               {/* Shipping Address Display */}
               {deal.shippingDetails && (

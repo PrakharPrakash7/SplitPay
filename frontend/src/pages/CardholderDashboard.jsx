@@ -274,17 +274,84 @@ const CardholderDashboard = () => {
     socket.on("connect", () => {
       console.log("✅ Socket.io connected:", socket.id);
       socket.emit("joinCardholders");
+      console.log("📡 Joined cardholders room");
+    });
+
+    // Test connection listener
+    socket.on("testConnection", (data) => {
+      console.log("🧪 Test connection received:", data);
     });
 
     socket.on("connect_error", (error) => {
       console.error("❌ Socket connection error:", error);
     });
 
+    console.log("🎧 Registering 'newDeal' event listener...");
+
     // Listen for new deals
-    socket.on("newDeal", async (deal) => {
-      console.log("🆕 New deal received:", deal);
-      toast.success("🆕 New deal available!");
-      await fetchDeals();
+    socket.on("newDeal", async (data) => {
+      console.log("🆕 ========== NEW DEAL EVENT RECEIVED ==========");
+      console.log("🆕 Raw data:", JSON.stringify(data));
+      toast.success("🆕 New deal available! Opening...");
+      
+      // Extract the deal from socket data
+      const socketDeal = data?.deal;
+      
+      // Force immediate refresh of deals list
+      try {
+        const token = getAuthToken('cardholder');
+        const response = await fetch(`${API_BASE_URL}/api/deals`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (response.ok) {
+          const fetchedData = await response.json();
+          console.log("✅ Deals refreshed after new deal:", fetchedData.deals?.length, "deals");
+          const allDeals = fetchedData.deals || [];
+          setDeals(allDeals);
+          
+          // Find the new deal - prioritize socket data, then find newest pending deal
+          let newDeal = null;
+          
+          if (socketDeal?._id) {
+            // Find the deal by ID from socket
+            newDeal = allDeals.find(d => d._id === socketDeal._id);
+            console.log("🔍 Found deal from socket ID:", newDeal?._id);
+          }
+          
+          if (!newDeal) {
+            // Fallback: Find the newest pending deal (most recent createdAt)
+            const pendingDeals = allDeals.filter(d => d.status === 'pending');
+            if (pendingDeals.length > 0) {
+              // Sort by createdAt descending (newest first)
+              pendingDeals.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+              newDeal = pendingDeals[0];
+              console.log("🔍 Found newest pending deal:", newDeal?._id);
+            }
+          }
+          
+          // Auto-open modal for the new deal
+          if (newDeal) {
+            console.log("🔓 Auto-opening modal for new deal:", newDeal._id);
+            
+            // Small delay to ensure state updates properly
+            setTimeout(() => {
+              setSelectedDeal(newDeal);
+              setShowDealModal(true);
+              setAutoOpenedDealId(newDeal._id);
+              console.log("✅ Modal opened for deal:", newDeal._id);
+            }, 100);
+          } else {
+            console.warn("⚠️ No new deal found to open modal");
+          }
+        } else {
+          console.error("❌ Failed to refresh deals after new deal");
+          await fetchDeals();
+        }
+      } catch (error) {
+        console.error("❌ Error refreshing deals after new deal:", error);
+        await fetchDeals();
+      }
     });
 
     // Listen for deal accepted by another cardholder

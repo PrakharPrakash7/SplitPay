@@ -298,13 +298,23 @@ const BuyerDashboard = () => {
   const handlePayment = (dealData) => {
     const { deal, order } = dealData;
     
+    // Truncate description to max 255 characters (Razorpay limit)
+    const productTitle = deal.product?.title || 'Product';
+    const descriptionPrefix = 'Payment for ';
+    const maxDescriptionLength = 255;
+    const maxTitleLength = maxDescriptionLength - descriptionPrefix.length;
+    const truncatedTitle = productTitle.length > maxTitleLength 
+      ? productTitle.substring(0, maxTitleLength - 3) + '...' 
+      : productTitle;
+    const description = `${descriptionPrefix}${truncatedTitle}`;
+    
     const options = {
       key: order.razorpayKeyId || "rzp_test_RBdZZFe44Lnw5j",
       amount: order.order.amount, // Amount in paise from backend
       currency: order.order.currency || "INR",
       order_id: order.order.id, // Razorpay order ID
       name: "SplitPay",
-      description: `Payment for ${deal.product?.title || 'Product'}`,
+      description: description,
       handler: async function (response) {
         console.log("💳 Payment successful from Razorpay, verifying...", response);
         

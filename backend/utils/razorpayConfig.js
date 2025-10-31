@@ -32,12 +32,14 @@ const razorpayInstance = new Razorpay({
  * @returns {Promise<object>} - Razorpay order object
  * 
  * IMPORTANT LIMITS:
- * - Test Mode: Supports up to ₹2,00,000 (2 lakhs) in our application
- * - Razorpay Test Mode Default: ₹1,00,000 (1 lakh) - may show errors above this
+ * - Test Mode: Razorpay limits transactions to ₹50,000 (this is Razorpay's restriction)
+ * - Our App Maximum: ₹2,00,000 (2 lakhs) - works in live mode
  * - Live Mode: ₹10,00,000+ (configurable based on KYC and account limits)
  * 
- * NOTE: If you see "amount exceeded" errors in test mode with amounts > ₹1 lakh,
- * this is a Razorpay test mode limitation. In live mode, much higher limits apply.
+ * NOTE: If you see "amount exceeded" errors in test mode with amounts > ₹50,000,
+ * this is a Razorpay test mode limitation. You have two options:
+ * 1. Test with amounts ≤ ₹50,000 (e.g., ₹47,000 product = ₹49,350 total with commission)
+ * 2. Switch to live mode (requires KYC completion) for amounts up to ₹2,00,000
  */
 export const createOrder = async (amount, dealId, notes = {}) => {
   try {
@@ -46,8 +48,25 @@ export const createOrder = async (amount, dealId, notes = {}) => {
       throw new Error('Amount must be greater than 0');
     }
 
-    if (amount > 200000) {
-      throw new Error('Amount exceeds maximum limit of ₹2,00,000. Please contact support for higher limits.');
+    // Check if using test keys
+    const isTestMode = razorpayKeyId.includes('test');
+    const TEST_MODE_LIMIT = 50000; // Razorpay test mode limit: ₹50,000
+    const LIVE_MODE_LIMIT = 200000; // Our application limit: ₹2,00,000
+
+    if (isTestMode && amount > TEST_MODE_LIMIT) {
+      throw new Error(
+        `Test mode is limited to ₹${TEST_MODE_LIMIT.toLocaleString('en-IN')}. ` +
+        `Your amount (₹${amount.toLocaleString('en-IN')}) exceeds this limit. ` +
+        `Please use a product priced at ₹${Math.floor(TEST_MODE_LIMIT / 1.05).toLocaleString('en-IN')} or less, ` +
+        `or switch to live mode for higher amounts.`
+      );
+    }
+
+    if (amount > LIVE_MODE_LIMIT) {
+      throw new Error(
+        `Amount exceeds maximum limit of ₹${LIVE_MODE_LIMIT.toLocaleString('en-IN')}. ` +
+        `Please contact support for higher limits.`
+      );
     }
 
     // Shorten receipt to fit Razorpay's 40 character limit
