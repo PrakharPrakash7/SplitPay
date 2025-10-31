@@ -15,6 +15,7 @@ import userRoutes from "./routes/user.js";
 import monitoringRoutes from "./routes/monitoring.js";
 import adminDashboardRoutes from "./routes/adminDashboard.js";
 import paymentRoutes from "./routes/payment.js";
+import chatRoutes from "./routes/chat.js";
 
 dotenv.config();
 
@@ -62,6 +63,7 @@ app.use("/api/users", userRoutes);
 app.use("/api/monitoring", monitoringRoutes);
 app.use("/api/admin", adminDashboardRoutes);
 app.use("/api/payment", paymentRoutes);
+app.use("/api/chat", chatRoutes);
 
 app.get("/", (req, res) => res.send("SplitPay Backend Running ✅"));
 
@@ -86,17 +88,43 @@ io.on("connection", (socket) => {
   // Join room based on user role
   socket.on("joinBuyers", () => {
     socket.join("buyers");
-    console.log(`👤 ${socket.id} joined buyers room`);
+    //console.log(`👤 ${socket.id} joined buyers room`);
   });
 
   socket.on("joinCardholders", () => {
     socket.join("cardholders");
-    console.log(`💳 ${socket.id} joined cardholders room`);
+    //console.log(`💳 ${socket.id} joined cardholders room`);
   });
 
   socket.on("joinAdmins", () => {
     socket.join("admins");
-    console.log(`🔐 ${socket.id} joined admins room`);
+    //console.log(`🔐 ${socket.id} joined admins room`);
+  });
+
+  // Chat room management
+  socket.on("join-chat-room", (dealId) => {
+    socket.join(`chat-${dealId}`);
+   // console.log(`💬 ${socket.id} joined chat room for deal: ${dealId}`);
+  });
+
+  socket.on("leave-chat-room", (dealId) => {
+    socket.leave(`chat-${dealId}`);
+    //console.log(`💬 ${socket.id} left chat room for deal: ${dealId}`);
+  });
+
+  // Real-time chat messaging
+  socket.on("send-message", (data) => {
+    const { dealId, message, senderId, senderRole, timestamp } = data;
+    // console.log(`💬 Message in deal ${dealId} from ${senderRole}:`, message.substring(0, 50));
+    
+    // Broadcast to all users in the chat room (including sender for confirmation)
+    io.to(`chat-${dealId}`).emit("new-message", {
+      dealId,
+      message,
+      senderId,
+      senderRole,
+      timestamp
+    });
   });
 
   socket.on("disconnect", () => {
@@ -115,6 +143,6 @@ mongoose.connect(process.env.MONGO_URI)
 
 const PORT = process.env.PORT || 5000;
 httpServer.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`🔌 Socket.io ready on port ${PORT}`);
+  //console.log(`🚀 Server running on port ${PORT}`);
+  //console.log(`🔌 Socket.io ready on port ${PORT}`);
 });

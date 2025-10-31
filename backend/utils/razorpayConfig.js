@@ -30,32 +30,66 @@ const razorpayInstance = new Razorpay({
  * @param {string} dealId - Deal ID for reference
  * @param {object} notes - Additional metadata
  * @returns {Promise<object>} - Razorpay order object
+ * 
+ * IMPORTANT LIMITS:
+ * - Test Mode: Supports up to ₹2,00,000 (2 lakhs) in our application
+ * - Razorpay Test Mode Default: ₹1,00,000 (1 lakh) - may show errors above this
+ * - Live Mode: ₹10,00,000+ (configurable based on KYC and account limits)
+ * 
+ * NOTE: If you see "amount exceeded" errors in test mode with amounts > ₹1 lakh,
+ * this is a Razorpay test mode limitation. In live mode, much higher limits apply.
  */
 export const createOrder = async (amount, dealId, notes = {}) => {
   try {
+    // Validate amount
+    if (amount <= 0) {
+      throw new Error('Amount must be greater than 0');
+    }
+
+    if (amount > 200000) {
+      throw new Error('Amount exceeds maximum limit of ₹2,00,000. Please contact support for higher limits.');
+    }
+
     // Shorten receipt to fit Razorpay's 40 character limit
     const shortDealId = dealId.toString().slice(-12); // Last 12 chars of dealId
     const timestamp = Date.now().toString().slice(-8); // Last 8 digits of timestamp
     
+    const amountInPaise = Math.round(amount * 100); // Convert to paise (₹100 = 10000 paise)
+    
     const options = {
-      amount: Math.round(amount * 100), // Convert to paise (₹100 = 10000 paise)
+      amount: amountInPaise,
       currency: 'INR',
       receipt: `d_${shortDealId}_${timestamp}`, // Max 40 chars: d_ + 12 + _ + 8 = 23 chars
       payment_capture: 0, // Hold payment (don't auto-capture) - ESCROW SIMULATION
       notes: {
         dealId,
         type: 'buyer_escrow_payment',
+        amountInRupees: amount,
         ...notes
       }
     };
 
-    console.log('📝 Creating Razorpay order:', options);
+    console.log('📝 Creating Razorpay order:');
+    console.log(`   Amount: ₹${amount.toLocaleString('en-IN')} (${amountInPaise} paise)`);
+    console.log(`   Order ID: ${options.receipt}`);
+    console.log(`   Currency: ${options.currency}`);
+    
     const order = await razorpayInstance.orders.create(options);
     console.log('✅ Razorpay order created:', order.id);
     
     return order;
   } catch (error) {
     console.error('❌ Razorpay order creation failed:', error);
+    
+    // Enhanced error messages for common issues
+    if (error.message && error.message.includes('amount')) {
+      throw new Error(`Amount validation failed: ${error.message}`);
+    }
+    
+    if (error.error && error.error.description) {
+      throw new Error(`Razorpay error: ${error.error.description}`);
+    }
+    
     throw new Error(`Failed to create Razorpay order: ${error.message}`);
   }
 };

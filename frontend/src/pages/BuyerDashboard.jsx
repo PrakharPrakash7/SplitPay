@@ -306,7 +306,7 @@ const BuyerDashboard = () => {
       name: "SplitPay",
       description: `Payment for ${deal.product?.title || 'Product'}`,
       handler: async function (response) {
-        console.log("💳 Payment successful:", response);
+        console.log("💳 Payment successful from Razorpay, verifying...", response);
         
         try {
           const token = getAuthToken('buyer');
@@ -324,7 +324,10 @@ const BuyerDashboard = () => {
             })
           });
 
+          const verifyData = await verifyResponse.json();
+
           if (verifyResponse.ok) {
+            console.log("✅ Payment verified successfully");
             toast.success("💰 Payment successful! Funds held in escrow.");
             setPaymentModal({ show: false, deal: null });
             
@@ -338,39 +341,92 @@ const BuyerDashboard = () => {
               setShowAddressForm(true);
             }, 1500);
           } else {
-            const errorData = await verifyResponse.json();
-            console.error("Verification failed:", errorData);
-            toast.error(errorData.error || "Payment verification failed");
+            console.error("❌ Verification failed:", verifyData);
+            toast.error(verifyData.error || "Payment verification failed");
+            setPaymentModal({ show: false, deal: null });
           }
         } catch (error) {
-          console.error("Payment verification error:", error);
+          console.error("❌ Payment verification error:", error);
           toast.error("Something went wrong with payment verification");
+          setPaymentModal({ show: false, deal: null });
         }
       },
       modal: {
         ondismiss: function() {
-          console.log("Payment cancelled");
+          console.log("⚠️ Payment cancelled by user");
           setPaymentModal({ show: false, deal: null });
           toast.info("Payment cancelled");
-        }
+        },
+        escape: true,
+        confirm_close: false, // Don't ask for confirmation
+        animation: true,
+        backdropclose: false // Prevent clicking outside to close
       },
       prefill: {
         name: "Buyer",
-        email: "buyer@example.com"
+        email: "buyer@example.com",
+        contact: "9999999999"
       },
       theme: {
         color: "#3399cc"
-      }
+      },
+      // Add retry configuration
+      retry: {
+        enabled: true,
+        max_count: 3
+      },
+      // Add timeout configuration
+      timeout: 900, // 15 minutes in seconds
+      // Add remember customer option
+      remember_customer: false
     };
 
-    const rzp = new window.Razorpay(options);
-    rzp.open();
+    try {
+      console.log('🚀 Opening Razorpay checkout:', {
+        key: options.key,
+        amount: options.amount,
+        currency: options.currency,
+        order_id: options.order_id
+      });
+      
+      const rzp = new window.Razorpay(options);
+      
+      // Add payment failure handler
+      rzp.on('payment.failed', function (response) {
+        console.error('❌ Payment failed from Razorpay:', response.error);
+        const errorMsg = response.error.description || response.error.reason || 'Payment failed';
+        toast.error(`Payment failed: ${errorMsg}`);
+        setPaymentModal({ show: false, deal: null });
+      });
+      
+      rzp.open();
+      console.log('✅ Razorpay modal opened successfully');
+    } catch (razorpayError) {
+      console.error('❌ Error opening Razorpay:', razorpayError);
+      toast.error('Failed to open payment gateway. Please refresh and try again.');
+      setPaymentModal({ show: false, deal: null });
+    }
   };
 
   // Initiate payment
   const initiatePayment = async (deal) => {
     try {
+      // Check if Razorpay script is loaded
+      if (!window.Razorpay) {
+        toast.error('Payment gateway not loaded. Please refresh the page.');
+        console.error('❌ Razorpay script not loaded');
+        return;
+      }
+
       const token = getAuthToken('buyer');
+      
+      if (!token) {
+        toast.error('Please login again to continue');
+        return;
+      }
+
+      console.log('💰 Initiating payment for deal:', deal._id);
+      
       const response = await fetch(`${API_BASE_URL}/api/payment/create-order`, {
         method: "POST",
         headers: {
@@ -380,17 +436,18 @@ const BuyerDashboard = () => {
         body: JSON.stringify({ dealId: deal._id })
       });
 
+      const orderData = await response.json();
+
       if (response.ok) {
-        const orderData = await response.json();
-        console.log("📦 Order created:", orderData);
+        console.log("📦 Order created successfully:", orderData);
         handlePayment({ deal, order: orderData });
       } else {
-        const errorData = await response.json();
-        toast.error(errorData.error || "Failed to create payment order");
+        console.error("❌ Failed to create order:", orderData);
+        toast.error(orderData.error || "Failed to create payment order");
       }
     } catch (error) {
-      console.error("Payment initiation error:", error);
-      toast.error("Unable to process payment");
+      console.error("❌ Payment initiation error:", error);
+      toast.error("Unable to process payment. Please try again.");
     }
   };
 

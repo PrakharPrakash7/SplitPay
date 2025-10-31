@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../utils/api';
 import { getAuthToken } from '../utils/authHelper';
+import ChatBox from './ChatBox';
 
 const DealFlowModal = ({ deal, onClose, onSuccess, userRole, mode = 'view' }) => {
   // State for creating new deal (Buyer)
@@ -171,13 +172,28 @@ const DealFlowModal = ({ deal, onClose, onSuccess, userRole, mode = 'view' }) =>
         return;
       }
 
-      // Load Razorpay script
-      const script = document.createElement('script');
-      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
-      script.async = true;
-      document.body.appendChild(script);
+      // Load Razorpay script (only if not already loaded)
+      if (!window.Razorpay) {
+        const script = document.createElement('script');
+        script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+        script.async = true;
+        
+        script.onerror = () => {
+          console.error('Failed to load Razorpay script');
+          toast.error('Failed to load payment gateway. Please check your internet connection.');
+          setProcessingPayment(false);
+        };
+        
+        script.onload = () => {
+          openRazorpayCheckout();
+        };
+        
+        document.body.appendChild(script);
+      } else {
+        openRazorpayCheckout();
+      }
 
-      script.onload = () => {
+      function openRazorpayCheckout() {
         const options = {
           key: data.razorpayKeyId,
           amount: data.order.amount,
@@ -186,48 +202,98 @@ const DealFlowModal = ({ deal, onClose, onSuccess, userRole, mode = 'view' }) =>
           description: deal.product?.title || 'Product Purchase',
           order_id: data.order.id,
           handler: async function (response) {
-            // Verify payment
-            const verifyResponse = await fetch(`${API_BASE_URL}/api/payment/verify-payment`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-              },
-              body: JSON.stringify({
-                dealId: deal._id,
-                razorpay_order_id: response.razorpay_order_id,
-                razorpay_payment_id: response.razorpay_payment_id,
-                razorpay_signature: response.razorpay_signature
-              })
-            });
+            console.log('💰 Payment successful from Razorpay, verifying...', response);
+            
+            // Don't reset processing state yet - wait for verification
+            try {
+              // Verify payment
+              const verifyResponse = await fetch(`${API_BASE_URL}/api/payment/verify-payment`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                  dealId: deal._id,
+                  razorpay_order_id: response.razorpay_order_id,
+                  razorpay_payment_id: response.razorpay_payment_id,
+                  razorpay_signature: response.razorpay_signature
+                })
+              });
 
-            if (verifyResponse.ok) {
-              toast.success('💰 Payment successful!');
-              if (onSuccess) onSuccess();
-              // Keep modal open to show next step
-            } else {
-              toast.error('Payment verification failed');
+              const verifyData = await verifyResponse.json();
+
+              if (verifyResponse.ok) {
+                console.log('✅ Payment verified successfully');
+                toast.success('💰 Payment successful! Please share your address.');
+                if (onSuccess) onSuccess();
+                // Keep modal open to show next step
+              } else {
+                console.error('❌ Payment verification failed:', verifyData);
+                toast.error(verifyData.error || 'Payment verification failed');
+              }
+            } catch (verifyError) {
+              console.error('❌ Error during payment verification:', verifyError);
+              toast.error('Payment verification failed. Please contact support.');
+            } finally {
+              setProcessingPayment(false);
             }
-            setProcessingPayment(false);
           },
           prefill: {
             name: 'Buyer',
-            email: 'buyer@example.com'
+            email: 'buyer@example.com',
+            contact: '9999999999'
           },
           theme: {
             color: '#3B82F6'
           },
           modal: {
             ondismiss: function() {
+              console.log('⚠️ Payment modal dismissed by user');
               setProcessingPayment(false);
               toast.error('Payment cancelled');
-            }
-          }
+            },
+            escape: true,
+            confirm_close: false, // Don't ask for confirmation
+            animation: true,
+            backdropclose: false // Prevent clicking outside to close
+          },
+          // Add retry configuration
+          retry: {
+            enabled: true,
+            max_count: 3
+          },
+          // Add timeout configuration
+          timeout: 900, // 15 minutes in seconds
+          // Add remember customer option
+          remember_customer: false
         };
 
-        const razorpay = new window.Razorpay(options);
-        razorpay.open();
-      };
+        try {
+          console.log('🚀 Opening Razorpay checkout with options:', {
+            key: options.key,
+            amount: options.amount,
+            currency: options.currency,
+            order_id: options.order_id
+          });
+          
+          const razorpay = new window.Razorpay(options);
+          
+          razorpay.on('payment.failed', function (response) {
+            console.error('❌ Payment failed from Razorpay:', response.error);
+            const errorMsg = response.error.description || response.error.reason || 'Payment failed';
+            toast.error(`Payment failed: ${errorMsg}`);
+            setProcessingPayment(false);
+          });
+          
+          razorpay.open();
+          console.log('✅ Razorpay modal opened successfully');
+        } catch (razorpayError) {
+          console.error('❌ Error opening Razorpay:', razorpayError);
+          toast.error('Failed to open payment gateway. Please try again.');
+          setProcessingPayment(false);
+        }
+      }
     } catch (error) {
       console.error('Error initiating payment:', error);
       toast.error('Unable to initiate payment');
@@ -927,115 +993,160 @@ const DealFlowModal = ({ deal, onClose, onSuccess, userRole, mode = 'view' }) =>
           )}
 
           {currentStep === 'order_tracking' && (
-            <div className="text-center py-12">
-              <div className="text-8xl mb-6">📦</div>
-              <h3 className="text-2xl font-bold text-gray-800 mb-3">Order Placed!</h3>
-              <p className="text-gray-600 text-lg mb-6">Tracking your order...</p>
-              {deal.trackingUrl && (
-                <a
-                  href={deal.trackingUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-block bg-blue-600 text-white py-3 px-8 rounded-lg hover:bg-blue-700 font-semibold"
-                >
-                  🔗 Track Order
-                </a>
-              )}
+            <div className="py-8">
+              <div className="text-center mb-8">
+                <div className="text-8xl mb-6">📦</div>
+                <h3 className="text-2xl font-bold text-gray-800 mb-3">Order Placed!</h3>
+                <p className="text-gray-600 text-lg mb-6">Tracking your order...</p>
+                {deal.trackingUrl && (
+                  <a
+                    href={deal.trackingUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-block bg-blue-600 text-white py-3 px-8 rounded-lg hover:bg-blue-700 font-semibold"
+                  >
+                    🔗 Track Order
+                  </a>
+                )}
+              </div>
+              
+              {/* Chat Section */}
+              <div className="mt-8">
+                <ChatBox dealId={deal._id} userRole={userRole} />
+              </div>
             </div>
           )}
 
           {currentStep === 'waiting_delivery' && (
-            <div className="text-center py-12">
-              <div className="text-8xl mb-6">🚚</div>
-              <h3 className="text-2xl font-bold text-gray-800 mb-3">Order in Transit</h3>
-              <p className="text-gray-600 text-lg">Waiting for buyer to confirm delivery</p>
-              {deal.trackingUrl && (
-                <a
-                  href={deal.trackingUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-block mt-4 bg-blue-100 text-blue-700 py-3 px-6 rounded-lg hover:bg-blue-200 font-semibold"
-                >
-                  🔗 Track Shipment
-                </a>
-              )}
+            <div className="py-8">
+              <div className="text-center mb-8">
+                <div className="text-8xl mb-6">🚚</div>
+                <h3 className="text-2xl font-bold text-gray-800 mb-3">Order in Transit</h3>
+                <p className="text-gray-600 text-lg">Waiting for buyer to confirm delivery</p>
+                {deal.trackingUrl && (
+                  <a
+                    href={deal.trackingUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-block mt-4 bg-blue-100 text-blue-700 py-3 px-6 rounded-lg hover:bg-blue-200 font-semibold"
+                  >
+                    🔗 Track Shipment
+                  </a>
+                )}
+              </div>
+              
+              {/* Chat Section */}
+              <div className="mt-8">
+                <ChatBox dealId={deal._id} userRole={userRole} />
+              </div>
             </div>
           )}
 
           {currentStep === 'delivery_tracking' && (
-            <div className="text-center py-12">
-              <div className="text-8xl mb-6">🚚</div>
-              <h3 className="text-2xl font-bold text-gray-800 mb-3">Out for Delivery</h3>
-              <p className="text-gray-600 text-lg mb-6">Your order is on its way!</p>
-              {deal.trackingUrl && (
-                <a
-                  href={deal.trackingUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-block bg-teal-600 text-white py-3 px-8 rounded-lg hover:bg-teal-700 font-semibold"
-                >
-                  🔗 Track Delivery
-                </a>
-              )}
+            <div className="py-8">
+              <div className="text-center mb-8">
+                <div className="text-8xl mb-6">🚚</div>
+                <h3 className="text-2xl font-bold text-gray-800 mb-3">Out for Delivery</h3>
+                <p className="text-gray-600 text-lg mb-6">Your order is on its way!</p>
+                {deal.trackingUrl && (
+                  <a
+                    href={deal.trackingUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-block bg-teal-600 text-white py-3 px-8 rounded-lg hover:bg-teal-700 font-semibold"
+                  >
+                    🔗 Track Delivery
+                  </a>
+                )}
+              </div>
+              
+              {/* Chat Section */}
+              <div className="mt-8">
+                <ChatBox dealId={deal._id} userRole={userRole} />
+              </div>
             </div>
           )}
 
           {currentStep === 'waiting_confirmation' && (
-            <div className="text-center py-12">
-              <div className="text-8xl mb-6">✅</div>
-              <h3 className="text-2xl font-bold text-gray-800 mb-3">Payment Disbursed!</h3>
-              <p className="text-gray-600 text-lg">Waiting for buyer to confirm receipt</p>
-              <div className="mt-6 bg-green-50 border-2 border-green-200 rounded-lg p-6">
-                <p className="text-green-800 font-semibold text-lg">
-                  💰 Your commission of ₹{deal.cardholderCommission} has been paid!
-                </p>
+            <div className="py-8">
+              <div className="text-center mb-8">
+                <div className="text-8xl mb-6">✅</div>
+                <h3 className="text-2xl font-bold text-gray-800 mb-3">Payment Disbursed!</h3>
+                <p className="text-gray-600 text-lg">Waiting for buyer to confirm receipt</p>
+                <div className="mt-6 bg-green-50 border-2 border-green-200 rounded-lg p-6">
+                  <p className="text-green-800 font-semibold text-lg">
+                    💰 Your commission of ₹{deal.cardholderCommission} has been paid!
+                  </p>
+                </div>
+              </div>
+              
+              {/* Chat Section */}
+              <div className="mt-8">
+                <ChatBox dealId={deal._id} userRole={userRole} />
               </div>
             </div>
           )}
 
           {currentStep === 'payment_received' && (
-            <div className="text-center py-12">
-              <div className="text-8xl mb-6">💰</div>
-              <h3 className="text-2xl font-bold text-gray-800 mb-3">Payment Received!</h3>
-              <p className="text-gray-600 text-lg mb-4">Your commission has been disbursed</p>
-              <div className="bg-gradient-to-r from-green-50 to-blue-50 border-2 border-green-200 rounded-lg p-8">
-                <p className="text-4xl font-bold text-green-600 mb-2">
-                  ₹{deal.cardholderCommission}
-                </p>
-                <p className="text-gray-700 font-semibold">Commission Earned</p>
+            <div className="py-8">
+              <div className="text-center mb-8">
+                <div className="text-8xl mb-6">💰</div>
+                <h3 className="text-2xl font-bold text-gray-800 mb-3">Payment Received!</h3>
+                <p className="text-gray-600 text-lg mb-4">Your commission has been disbursed</p>
+                <div className="bg-gradient-to-r from-green-50 to-blue-50 border-2 border-green-200 rounded-lg p-8">
+                  <p className="text-4xl font-bold text-green-600 mb-2">
+                    ₹{deal.cardholderCommission}
+                  </p>
+                  <p className="text-gray-700 font-semibold">Commission Earned</p>
+                </div>
+              </div>
+              
+              {/* Chat Section */}
+              <div className="mt-8">
+                <ChatBox dealId={deal._id} userRole={userRole} />
               </div>
             </div>
           )}
 
           {currentStep === 'completed' && (
-            <div className="text-center py-12">
-              <div className="text-8xl mb-6">🎉</div>
-              <h3 className="text-3xl font-bold text-gray-800 mb-4">Deal Completed!</h3>
-              <p className="text-gray-600 text-xl mb-6">Thank you for using SplitPay</p>
-              <div className="bg-gradient-to-r from-green-50 to-purple-50 border-2 border-green-300 rounded-lg p-8">
-                {userRole === 'buyer' && (
-                  <>
-                    <p className="text-2xl font-bold text-green-600 mb-2">
-                      You Saved: ₹{deal.buyerDiscount}
-                    </p>
-                    <p className="text-gray-700">Enjoy your product! 🎁</p>
-                  </>
-                )}
-                {userRole === 'cardholder' && (
-                  <>
-                    <p className="text-2xl font-bold text-blue-600 mb-2">
-                      You Earned: ₹{deal.cardholderCommission}
-                    </p>
-                    <p className="text-gray-700">Great job! 💪</p>
-                  </>
-                )}
+            <div className="py-12">
+              <div className="text-center mb-8">
+                <div className="text-8xl mb-6">🎉</div>
+                <h3 className="text-3xl font-bold text-gray-800 mb-4">Deal Completed!</h3>
+                <p className="text-gray-600 text-xl mb-6">Thank you for using SplitPay</p>
+                <div className="bg-gradient-to-r from-green-50 to-purple-50 border-2 border-green-300 rounded-lg p-8">
+                  {userRole === 'buyer' && (
+                    <>
+                      <p className="text-2xl font-bold text-green-600 mb-2">
+                        You Saved: ₹{deal.buyerDiscount}
+                      </p>
+                      <p className="text-gray-700">Enjoy your product! 🎁</p>
+                    </>
+                  )}
+                  {userRole === 'cardholder' && (
+                    <>
+                      <p className="text-2xl font-bold text-blue-600 mb-2">
+                        You Earned: ₹{deal.cardholderCommission}
+                      </p>
+                      <p className="text-gray-700">Great job! 💪</p>
+                    </>
+                  )}
+                </div>
               </div>
-              <button
-                onClick={onClose}
-                className="mt-6 bg-gray-200 text-gray-700 py-3 px-8 rounded-lg hover:bg-gray-300 font-semibold"
-              >
-                Close
-              </button>
+              
+              {/* Chat Section - Still accessible after completion */}
+              <div className="mt-8">
+                <ChatBox dealId={deal._id} userRole={userRole} />
+              </div>
+              
+              <div className="text-center mt-8">
+                <button
+                  onClick={onClose}
+                  className="bg-gray-200 text-gray-700 py-3 px-8 rounded-lg hover:bg-gray-300 font-semibold"
+                >
+                  Close
+                </button>
+              </div>
             </div>
           )}
         </div>

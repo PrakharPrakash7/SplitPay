@@ -57,6 +57,29 @@ router.post('/create-order', verifyToken, async (req, res) => {
     const commission = Math.round(productPrice * 0.05); // 5% commission
     const totalAmount = productPrice + commission;
 
+    // Validate amount limits
+    const MAX_AMOUNT = 200000; // 2 lakhs (₹2,00,000)
+    const MIN_AMOUNT = 100; // Minimum ₹100
+
+    if (totalAmount > MAX_AMOUNT) {
+      return res.status(400).json({ 
+        error: `Amount exceeds maximum limit of ₹${MAX_AMOUNT.toLocaleString('en-IN')}`,
+        details: `Total amount: ₹${totalAmount.toLocaleString('en-IN')} (Product: ₹${productPrice.toLocaleString('en-IN')} + Commission: ₹${commission.toLocaleString('en-IN')})`,
+        maxAmount: MAX_AMOUNT,
+        currentAmount: totalAmount
+      });
+    }
+
+    if (totalAmount < MIN_AMOUNT) {
+      return res.status(400).json({ 
+        error: `Amount is below minimum limit of ₹${MIN_AMOUNT}`,
+        minAmount: MIN_AMOUNT,
+        currentAmount: totalAmount
+      });
+    }
+
+    console.log(`💰 Payment amount: ₹${totalAmount.toLocaleString('en-IN')} (Product: ₹${productPrice.toLocaleString('en-IN')} + Commission: ₹${commission.toLocaleString('en-IN')})`);
+
     // Create Razorpay order with payment hold (escrow)
     const order = await createOrder(totalAmount, dealId, {
       buyerId: buyerId,
